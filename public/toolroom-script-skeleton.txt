@@ -1,0 +1,109 @@
+================================================================================
+ANCA TGX Studio — ToolRoom script SKELETON (TEMPLATE ONLY)
+================================================================================
+
+IMPORTANT
+---------
+* This is a TEMPLATE / pseudocode skeleton — NOT production-ready for all
+  ToolRoom / iGrind software generations (RN versions).
+* Parameter IDs, wizard field names, and scripting APIs differ by release.
+  You MUST adapt IDs and calls to YOUR ToolRoom release using ANCA documentation
+  and ANCA Club sample scripts.
+* ANCA TGX Studio does NOT write proprietary .TOM binaries. ToolRoom creates
+  the .TOM. Always verify the result in CIM3D before grinding on a TGX.
+* Confirm TGX software generation / post options with ANCA or your machine docs.
+
+Safe workflow
+-------------
+  Studio params  →  ToolRoom (manual iGrind wizard OR adapted script)
+                 →  .TOM saved by ToolRoom
+                 →  CIM3D verify
+                 →  TGX grind
+
+Studio JSON handoff schema
+--------------------------
+Exported files use:
+  schema:          "toolroomHandoff"
+  schemaVersion:   1
+
+Top-level keys:
+  disclaimer, generatedAt, toolType ("endmill" | "drill"), designId,
+  fields, mapping, notes
+
+`fields` — flat map of studio JSON field names (use these keys when reading
+the downloaded handoff JSON):
+
+  Common / both types:
+    toolType, name, diameter, fluteCount, overallLength, fluteLength,
+    shankDiameter, shankLength, coating, material
+
+  Solid endmill only:
+    helixAngle, cornerRadius, neckDiameter (nullable), neckLength (nullable)
+
+  Drill only:
+    pointAngle, webThinningNote
+
+Units in the studio are millimetres and degrees as labeled in the UI.
+`mapping` rows also carry human ToolRoom-style labels for manual entry.
+
+--------------------------------------------------------------------------------
+PSEUDOCODE — adapt to your ToolRoom scripting host / language
+--------------------------------------------------------------------------------
+
+  // 1) Load handoff JSON (or prompt operator for each field)
+  payload = readJson("EM-10-4F-toolroom-handoff.json")
+  assert payload.schema == "toolroomHandoff"
+  assert payload.schemaVersion == 1
+  f = payload.fields
+
+  // 2) Open the correct iGrind wizard for tool type
+  if f.toolType == "endmill":
+      openWizard("SolidEndmill")   // NAME VARIES BY RN — check ANCA docs
+  else if f.toolType == "drill":
+      openWizard("Drill")          // NAME VARIES BY RN — check ANCA docs
+  else:
+      fail("Unsupported toolType")
+
+  // 3) Set wizard fields — REPLACE placeholder IDs with your release's IDs
+  //    Examples below are ILLUSTRATIVE ONLY (not real ANCA API calls).
+  //
+  // setField("<PARAM_ID_TOOL_NAME>",      f.name)
+  // setField("<PARAM_ID_DIAMETER>",       f.diameter)        // mm
+  // setField("<PARAM_ID_FLUTE_COUNT>",    f.fluteCount)
+  // setField("<PARAM_ID_OAL>",            f.overallLength)   // mm
+  // setField("<PARAM_ID_FLUTE_LENGTH>",   f.fluteLength)     // mm
+  // setField("<PARAM_ID_SHANK_DIA>",      f.shankDiameter)   // mm
+  // setField("<PARAM_ID_SHANK_LENGTH>",   f.shankLength)     // mm
+  // setField("<PARAM_ID_COATING>",        f.coating)         // if exposed
+  // setField("<PARAM_ID_MATERIAL>",       f.material)        // if exposed
+  //
+  // if endmill:
+  //   setField("<PARAM_ID_HELIX>",        f.helixAngle)      // deg
+  //   setField("<PARAM_ID_CORNER_R>",     f.cornerRadius)    // mm
+  //   if f.neckDiameter != null:
+  //     setField("<PARAM_ID_NECK_DIA>",   f.neckDiameter)
+  //   if f.neckLength != null:
+  //     setField("<PARAM_ID_NECK_LEN>",   f.neckLength)
+  //
+  // if drill:
+  //   setField("<PARAM_ID_POINT_ANGLE>",  f.pointAngle)      // deg
+  //   // web thinning is often a separate point op — apply f.webThinningNote
+  //   // manually or via the point-thinning wizard page for your RN.
+
+  // 4) Save TOM via ToolRoom (ToolRoom writes the file — not this studio)
+  // saveToolAs("C:\\Tools\\" + sanitize(f.name) + ".TOM")
+
+  // 5) Operator checklist (do not skip)
+  //    [ ] Open .TOM in CIM3D and verify geometry / collisions
+  //    [ ] Confirm wheel pack and machine limits for your TGX
+  //    [ ] Confirm software generation with ANCA if unsure
+  //    [ ] Dry-run / first-off inspect before production qty
+
+References
+----------
+* ANCA Club — sample scripts and release notes for your ToolRoom version
+* ANCA ToolRoom / iGrind documentation for parameter ID tables
+* CIM3D — simulation / verification before grind
+* Your machine builder / ANCA support — TGX software generation confirmation
+
+End of skeleton.
