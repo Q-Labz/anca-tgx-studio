@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { DrillParams, EndmillParams, ToolType } from '../lib/types'
 
 interface Props {
@@ -128,22 +129,45 @@ export function ToolPreview({ toolType, params }: Props) {
     fluteBody.position.z = z + fluteLen / 2
     group.add(fluteBody)
 
+    // Helical flutes — each groove follows a helix wrapping around the body,
+    // so flutes run down the tool and twist by the helix angle.
     const fluteCount = Math.max(2, Math.min(8, params.fluteCount | 0))
+    const drawnFluteLen = Math.max(fluteLen, 0.5)
+    const helixDeg = toolType === 'endmill' ? ((params as EndmillParams).helixAngle || 30) : 30
+    const helixRad = (helixDeg * Math.PI) / 180
+    const realDia = Math.max(params.diameter, 0.5)
+    const realFluteLen = Math.max(
+      Math.min(params.fluteLength, params.overallLength - 0.5),
+      0.5,
+    )
+    // Total wrap angle over the flute length for a helix of this lead, capped so
+    // very long/steep flutes stay legible.
+    const totalTwist = Math.min(
+      (2 * realFluteLen * Math.tan(helixRad)) / realDia,
+      Math.PI * 4,
+    )
+    const grooveRadius = dia * 0.42
+    const tubeRadius = Math.max(dia * 0.07, 0.02)
+    const segments = Math.max(24, Math.round((totalTwist / (Math.PI * 2)) * 40))
     for (let i = 0; i < fluteCount; i++) {
-      const angle = (i / fluteCount) * Math.PI * 2
+      const baseAngle = (i / fluteCount) * Math.PI * 2
+      const points: THREE.Vector3[] = []
+      for (let k = 0; k <= segments; k++) {
+        const t = k / segments
+        const a = baseAngle + t * totalTwist
+        points.push(
+          new THREE.Vector3(
+            Math.cos(a) * grooveRadius,
+            Math.sin(a) * grooveRadius,
+            z + t * drawnFluteLen,
+          ),
+        )
+      }
+      const curve = new THREE.CatmullRomCurve3(points)
       const groove = new THREE.Mesh(
-        new THREE.CylinderGeometry(dia * 0.12, dia * 0.12, Math.max(fluteLen * 0.95, 0.4), 8),
+        new THREE.TubeGeometry(curve, segments, tubeRadius, 8, false),
         matFlute,
       )
-      groove.rotation.x = Math.PI / 2
-      const helix = toolType === 'endmill' ? ((params as EndmillParams).helixAngle || 30) : 30
-      const twist = (helix / 45) * 0.35
-      groove.position.set(
-        Math.cos(angle) * dia * 0.38,
-        Math.sin(angle) * dia * 0.38,
-        z + fluteLen / 2,
-      )
-      groove.rotation.z = angle + twist
       group.add(groove)
     }
     z += fluteLen
@@ -189,6 +213,16 @@ export function ToolPreview({ toolType, params }: Props) {
     camera.position.set(size * 0.55, size * 0.35, size * 0.7)
     camera.lookAt(0, 0, 0)
 
+    // Drag to orbit instead of a forced spin.
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.target.set(0, 0, 0)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.08
+    controls.enablePan = false
+    controls.minDistance = size * 0.35
+    controls.maxDistance = size * 1.8
+    controls.update()
+
     // Grid helper (subtle)
     const grid = new THREE.GridHelper(size * 1.5, 10, 0x1e2a32, 0x162028)
     grid.position.y = -size * 0.35
@@ -198,7 +232,7 @@ export function ToolPreview({ toolType, params }: Props) {
     let raf = 0
     const animate = () => {
       raf = requestAnimationFrame(animate)
-      group.rotation.y += 0.008
+      controls.update()
       renderer.render(scene, camera)
       frame++
     }
@@ -218,6 +252,7 @@ export function ToolPreview({ toolType, params }: Props) {
     return () => {
       cancelAnimationFrame(raf)
       ro.disconnect()
+      controls.dispose()
       renderer.dispose()
       matShank.dispose()
       matCutting.dispose()
@@ -238,7 +273,7 @@ export function ToolPreview({ toolType, params }: Props) {
   return (
     <div className="preview-panel">
       <div className="preview-header">
-        <span className="preview-title">Live 3D preview</span>
+        <span className="preview-title">Live 3D preview · drag to rotate</span>
         <span className="preview-badge">Simplified geometry — not grind sim</span>
       </div>
       <div ref={mountRef} className="preview-canvas" />
