@@ -10,7 +10,7 @@ interface Props {
 
 const STEEL = 0x8a9ba8
 const CARBIDE = 0xc5ccd3
-const FLUTE = 0x6b7a86
+const FLUTE = 0x2f3a44
 const ACCENT = 0x2a9d8f
 
 export function ToolPreview({ toolType, params }: Props) {
@@ -146,8 +146,8 @@ export function ToolPreview({ toolType, params }: Props) {
       (2 * realFluteLen * Math.tan(helixRad)) / realDia,
       Math.PI * 4,
     )
-    const grooveRadius = dia * 0.42
-    const tubeRadius = Math.max(dia * 0.07, 0.02)
+    const grooveRadius = dia * 0.46
+    const tubeRadius = Math.max(dia * 0.1, 0.03)
     const segments = Math.max(24, Math.round((totalTwist / (Math.PI * 2)) * 40))
     for (let i = 0; i < fluteCount; i++) {
       const baseAngle = (i / fluteCount) * Math.PI * 2
