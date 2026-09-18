@@ -64,6 +64,14 @@ export function ToolPreview({ toolType, params }: Props) {
       metalness: 0.5,
       roughness: 0.35,
     })
+    // Double-sided variant for the revolved (Lathe) end cap so the open top of
+    // the profile never culls into an invisible face.
+    const matEnd = new THREE.MeshStandardMaterial({
+      color: params.material === 'carbide' ? CARBIDE : 0xb8a070,
+      metalness: 0.7,
+      roughness: 0.4,
+      side: THREE.DoubleSide,
+    })
 
     const scale = 0.12
     const dia = Math.max(params.diameter, 0.5) * scale
@@ -80,7 +88,9 @@ export function ToolPreview({ toolType, params }: Props) {
       const drill = params as DrillParams
       const pointAngle = ((drill.pointAngle || 118) * Math.PI) / 180
       const half = pointAngle / 2
-      const coneH = Math.max(dia * 0.35, (dia / 2) / Math.tan(half))
+      // Cone height derived from the point angle so 118° vs 135° differ visibly:
+      // sharper angle -> taller point, blunter angle -> shorter point.
+      const coneH = Math.max(dia / 2 / Math.tan(half), dia * 0.05)
       const tip = new THREE.Mesh(
         new THREE.ConeGeometry(dia / 2, coneH, 24),
         matTip,
@@ -91,32 +101,38 @@ export function ToolPreview({ toolType, params }: Props) {
       z += coneH
     } else {
       const em = params as EndmillParams
-      if (em.cornerRadius > 0) {
-        const r = Math.min(em.cornerRadius, params.diameter / 2) * scale
-        const torus = new THREE.Mesh(
-          new THREE.TorusGeometry(dia / 2 - r, r, 12, 32, Math.PI),
-          matCutting,
-        )
-        torus.rotation.y = Math.PI / 2
-        torus.position.z = z + r * 0.15
-        // simpler: rounded end disc
-        const end = new THREE.Mesh(
-          new THREE.CylinderGeometry(dia / 2, dia / 2, r * 1.2, 32),
-          matCutting,
-        )
+      const cr = Math.min(Math.max(em.cornerRadius, 0), params.diameter / 2) * scale
+      if (cr > 0.001) {
+        // Rounded cutting end (bull-nose; a full ball-nose when corner R =
+        // radius), built by revolving the actual end profile so the corner
+        // radius is visible and scales with the parameter.
+        const R = dia / 2
+        const flat = Math.max(R - cr, 0)
+        const profile: THREE.Vector2[] = [new THREE.Vector2(0, 0)]
+        if (flat > 0) profile.push(new THREE.Vector2(flat, 0))
+        const arcSteps = 10
+        for (let s = 0; s <= arcSteps; s++) {
+          const th = (s / arcSteps) * (Math.PI / 2)
+          profile.push(
+            new THREE.Vector2(flat + cr * Math.sin(th), cr - cr * Math.cos(th)),
+          )
+        }
+        const end = new THREE.Mesh(new THREE.LatheGeometry(profile, 48), matEnd)
         end.rotation.x = Math.PI / 2
-        end.position.z = z + r * 0.6
+        end.position.z = z
         group.add(end)
-        z += r * 1.2
+        z += cr
       } else {
+        // Square end — flat cap.
+        const capH = Math.max(dia * 0.06, 0.05)
         const end = new THREE.Mesh(
-          new THREE.CylinderGeometry(dia / 2, dia / 2, 0.15 * scale * 10, 32),
+          new THREE.CylinderGeometry(dia / 2, dia / 2, capH, 48),
           matCutting,
         )
         end.rotation.x = Math.PI / 2
-        end.position.z = z + 0.08
+        end.position.z = z + capH / 2
         group.add(end)
-        z += 0.15
+        z += capH
       }
     }
 
@@ -173,6 +189,7 @@ export function ToolPreview({ toolType, params }: Props) {
     z += fluteLen
 
     // Optional neck (endmill)
+    let neckAdded = false
     if (toolType === 'endmill') {
       const em = params as EndmillParams
       if (em.neckDiameter != null && em.neckLength != null && em.neckLength > 0) {
@@ -186,12 +203,32 @@ export function ToolPreview({ toolType, params }: Props) {
         neck.position.z = z + nl / 2
         group.add(neck)
         z += nl
+        neckAdded = true
+      }
+    }
+
+    // Shank length honored directly; the leftover length up to the overall
+    // length is filled with a plain body so both parameters change the model.
+    let shankH = Math.max(shankLen, dia * 0.4)
+    const gap = oal - z - shankH
+    if (gap > 0.001) {
+      if (neckAdded) {
+        // A necked tool already stepped down before the shank, so just extend
+        // the shank rather than adding a full-diameter body after the neck.
+        shankH += gap
+      } else {
+        const body = new THREE.Mesh(
+          new THREE.CylinderGeometry(dia / 2, dia / 2, gap, 32),
+          matCutting,
+        )
+        body.rotation.x = Math.PI / 2
+        body.position.z = z + gap / 2
+        group.add(body)
+        z += gap
       }
     }
 
     // Shank
-    const remaining = Math.max(oal * 0.15, shankLen * 0.5, oal - z)
-    const shankH = Math.max(remaining, shankLen * 0.6)
     const shank = new THREE.Mesh(
       new THREE.CylinderGeometry(shankDia / 2, shankDia / 2, shankH, 32),
       matShank,
@@ -258,6 +295,7 @@ export function ToolPreview({ toolType, params }: Props) {
       matCutting.dispose()
       matFlute.dispose()
       matTip.dispose()
+      matEnd.dispose()
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
           obj.geometry.dispose()
