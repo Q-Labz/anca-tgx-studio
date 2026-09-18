@@ -65,12 +65,16 @@ export function ToolPreview({ toolType, params }: Props) {
       metalness: 0.5,
       roughness: 0.35,
     })
-    // Double-sided variant for the revolved (Lathe) end cap so the open top of
-    // the profile never culls into an invisible face.
     const matEnd = new THREE.MeshStandardMaterial({
       color: params.material === 'carbide' ? CARBIDE : 0xb8a070,
       metalness: 0.7,
       roughness: 0.4,
+      side: THREE.DoubleSide,
+    })
+    const matShankCap = new THREE.MeshStandardMaterial({
+      color: STEEL,
+      metalness: 0.85,
+      roughness: 0.35,
       side: THREE.DoubleSide,
     })
 
@@ -197,7 +201,7 @@ export function ToolPreview({ toolType, params }: Props) {
     group.add(shank)
     const shankCap = new THREE.Mesh(
       new THREE.CircleGeometry(shankDia / 2, 32),
-      matShank,
+      matShankCap,
     )
     shankCap.position.z = z + shankH
     group.add(shankCap)
@@ -267,6 +271,7 @@ export function ToolPreview({ toolType, params }: Props) {
       matFlute.dispose()
       matTip.dispose()
       matEnd.dispose()
+      matShankCap.dispose()
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
           obj.geometry.dispose()
