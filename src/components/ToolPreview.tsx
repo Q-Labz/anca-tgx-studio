@@ -195,33 +195,45 @@ export function ToolPreview({ toolType, params }: Props) {
     shank.rotation.x = Math.PI / 2
     shank.position.z = z + shankH / 2
     group.add(shank)
+    const shankCap = new THREE.Mesh(
+      new THREE.CircleGeometry(shankDia / 2, 32),
+      matShank,
+    )
+    shankCap.position.z = z + shankH
+    group.add(shankCap)
 
-    // Center group
-    const box = new THREE.Box3().setFromObject(group)
-    const center = box.getCenter(new THREE.Vector3())
-    group.position.sub(center)
-
-    // Orient tip up-ish for nicer view
+    // Orient tip up-ish, then frame the *oriented* bounds so shank/neck/OAL
+    // stay on camera instead of clipping off the top of the canvas.
     group.rotation.x = -Math.PI / 2.4
     group.rotation.z = Math.PI / 8
+    group.updateMatrixWorld(true)
 
-    const size = box.getSize(new THREE.Vector3()).length()
-    camera.position.set(size * 0.55, size * 0.35, size * 0.7)
+    const rawBox = new THREE.Box3().setFromObject(group)
+    group.position.sub(rawBox.getCenter(new THREE.Vector3()))
+    group.updateMatrixWorld(true)
+
+    const box = new THREE.Box3().setFromObject(group)
+    const size = box.getSize(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z, 0.01)
+    const fov = (camera.fov * Math.PI) / 180
+    const dist = (maxDim / 2 / Math.tan(fov / 2)) * 1.6
+    camera.position.set(dist * 0.72, dist * 0.22, dist * 0.82)
     camera.lookAt(0, 0, 0)
+    camera.near = Math.max(dist / 120, 0.01)
+    camera.far = dist * 24
+    camera.updateProjectionMatrix()
 
-    // Drag to orbit instead of a forced spin.
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.target.set(0, 0, 0)
     controls.enableDamping = true
     controls.dampingFactor = 0.08
     controls.enablePan = false
-    controls.minDistance = size * 0.35
-    controls.maxDistance = size * 1.8
+    controls.minDistance = dist * 0.35
+    controls.maxDistance = dist * 3
     controls.update()
 
-    // Grid helper (subtle)
-    const grid = new THREE.GridHelper(size * 1.5, 10, 0x1e2a32, 0x162028)
-    grid.position.y = -size * 0.35
+    const grid = new THREE.GridHelper(maxDim * 2.2, 10, 0x1e2a32, 0x162028)
+    grid.position.y = box.min.y - maxDim * 0.04
     scene.add(grid)
 
     let frame = 0
