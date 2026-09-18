@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { layoutTool } from '../lib/toolGeometry'
 import type { DrillParams, EndmillParams, ToolType } from '../lib/types'
 
 interface Props {
@@ -9,7 +11,7 @@ interface Props {
 
 const STEEL = 0x8a9ba8
 const CARBIDE = 0xc5ccd3
-const FLUTE = 0x6b7a86
+const FLUTE = 0x2f3a44
 const ACCENT = 0x2a9d8f
 
 export function ToolPreview({ toolType, params }: Props) {
@@ -63,23 +65,28 @@ export function ToolPreview({ toolType, params }: Props) {
       metalness: 0.5,
       roughness: 0.35,
     })
+    const matEnd = new THREE.MeshStandardMaterial({
+      color: params.material === 'carbide' ? CARBIDE : 0xb8a070,
+      metalness: 0.7,
+      roughness: 0.4,
+      side: THREE.DoubleSide,
+    })
+    const matShankCap = new THREE.MeshStandardMaterial({
+      color: STEEL,
+      metalness: 0.85,
+      roughness: 0.35,
+      side: THREE.DoubleSide,
+    })
 
-    const scale = 0.12
-    const dia = Math.max(params.diameter, 0.5) * scale
-    const shankDia = Math.max(params.shankDiameter, 0.5) * scale
-    const oal = Math.max(params.overallLength, 1) * scale
-    const fluteLen = Math.min(params.fluteLength, params.overallLength - 0.5) * scale
-    const shankLen = Math.min(params.shankLength, params.overallLength) * scale
+    const layout = layoutTool(toolType, params)
+    const dia = layout.diameter
+    const shankDia = layout.shankDiameter
 
     // Align tool along +Z (tip at +Z, shank toward -Z), then rotate for view
     let z = 0
 
-    // Tip / cutting end
     if (toolType === 'drill') {
-      const drill = params as DrillParams
-      const pointAngle = ((drill.pointAngle || 118) * Math.PI) / 180
-      const half = pointAngle / 2
-      const coneH = Math.max(dia * 0.35, (dia / 2) / Math.tan(half))
+      const coneH = layout.coneHeight
       const tip = new THREE.Mesh(
         new THREE.ConeGeometry(dia / 2, coneH, 24),
         matTip,
@@ -88,38 +95,40 @@ export function ToolPreview({ toolType, params }: Props) {
       tip.position.z = z + coneH / 2
       group.add(tip)
       z += coneH
-    } else {
-      const em = params as EndmillParams
-      if (em.cornerRadius > 0) {
-        const r = Math.min(em.cornerRadius, params.diameter / 2) * scale
-        const torus = new THREE.Mesh(
-          new THREE.TorusGeometry(dia / 2 - r, r, 12, 32, Math.PI),
-          matCutting,
+    } else if (layout.cornerRadius > 0.001) {
+      // Rounded cutting end (bull-nose; a full ball-nose when corner R =
+      // radius), built by revolving the actual end profile so the corner
+      // radius is visible and scales with the parameter.
+      const cr = layout.cornerRadius
+      const R = dia / 2
+      const flat = Math.max(R - cr, 0)
+      const profile: THREE.Vector2[] = [new THREE.Vector2(0, 0)]
+      if (flat > 0) profile.push(new THREE.Vector2(flat, 0))
+      const arcSteps = 10
+      for (let s = 0; s <= arcSteps; s++) {
+        const th = (s / arcSteps) * (Math.PI / 2)
+        profile.push(
+          new THREE.Vector2(flat + cr * Math.sin(th), cr - cr * Math.cos(th)),
         )
-        torus.rotation.y = Math.PI / 2
-        torus.position.z = z + r * 0.15
-        // simpler: rounded end disc
-        const end = new THREE.Mesh(
-          new THREE.CylinderGeometry(dia / 2, dia / 2, r * 1.2, 32),
-          matCutting,
-        )
-        end.rotation.x = Math.PI / 2
-        end.position.z = z + r * 0.6
-        group.add(end)
-        z += r * 1.2
-      } else {
-        const end = new THREE.Mesh(
-          new THREE.CylinderGeometry(dia / 2, dia / 2, 0.15 * scale * 10, 32),
-          matCutting,
-        )
-        end.rotation.x = Math.PI / 2
-        end.position.z = z + 0.08
-        group.add(end)
-        z += 0.15
       }
+      const end = new THREE.Mesh(new THREE.LatheGeometry(profile, 48), matEnd)
+      end.rotation.x = Math.PI / 2
+      end.position.z = z
+      group.add(end)
+      z += cr
+    } else {
+      const capH = layout.squareCapHeight
+      const end = new THREE.Mesh(
+        new THREE.CylinderGeometry(dia / 2, dia / 2, capH, 48),
+        matCutting,
+      )
+      end.rotation.x = Math.PI / 2
+      end.position.z = z + capH / 2
+      group.add(end)
+      z += capH
     }
 
-    // Fluted section — cylinder with helical groove approximations (thin cylinders offset)
+    const fluteLen = layout.fluteLength
     const fluteBody = new THREE.Mesh(
       new THREE.CylinderGeometry(dia / 2, dia / 2, Math.max(fluteLen, 0.5), 48),
       matCutting,
@@ -128,46 +137,61 @@ export function ToolPreview({ toolType, params }: Props) {
     fluteBody.position.z = z + fluteLen / 2
     group.add(fluteBody)
 
-    const fluteCount = Math.max(2, Math.min(8, params.fluteCount | 0))
+    const fluteCount = layout.fluteCount
+    const drawnFluteLen = Math.max(fluteLen, 0.5)
+    const totalTwist = layout.helixTwist
+    const grooveRadius = dia * 0.46
+    const tubeRadius = Math.max(dia * 0.1, 0.03)
+    const segments = Math.max(24, Math.round((totalTwist / (Math.PI * 2)) * 40))
     for (let i = 0; i < fluteCount; i++) {
-      const angle = (i / fluteCount) * Math.PI * 2
+      const baseAngle = (i / fluteCount) * Math.PI * 2
+      const points: THREE.Vector3[] = []
+      for (let k = 0; k <= segments; k++) {
+        const t = k / segments
+        const a = baseAngle + t * totalTwist
+        points.push(
+          new THREE.Vector3(
+            Math.cos(a) * grooveRadius,
+            Math.sin(a) * grooveRadius,
+            z + t * drawnFluteLen,
+          ),
+        )
+      }
+      const curve = new THREE.CatmullRomCurve3(points)
       const groove = new THREE.Mesh(
-        new THREE.CylinderGeometry(dia * 0.12, dia * 0.12, Math.max(fluteLen * 0.95, 0.4), 8),
+        new THREE.TubeGeometry(curve, segments, tubeRadius, 8, false),
         matFlute,
       )
-      groove.rotation.x = Math.PI / 2
-      const helix = toolType === 'endmill' ? ((params as EndmillParams).helixAngle || 30) : 30
-      const twist = (helix / 45) * 0.35
-      groove.position.set(
-        Math.cos(angle) * dia * 0.38,
-        Math.sin(angle) * dia * 0.38,
-        z + fluteLen / 2,
-      )
-      groove.rotation.z = angle + twist
       group.add(groove)
     }
     z += fluteLen
 
-    // Optional neck (endmill)
-    if (toolType === 'endmill') {
-      const em = params as EndmillParams
-      if (em.neckDiameter != null && em.neckLength != null && em.neckLength > 0) {
-        const nd = Math.max(em.neckDiameter, 0.3) * scale
-        const nl = em.neckLength * scale
-        const neck = new THREE.Mesh(
-          new THREE.CylinderGeometry(nd / 2, nd / 2, nl, 24),
-          matShank,
-        )
-        neck.rotation.x = Math.PI / 2
-        neck.position.z = z + nl / 2
-        group.add(neck)
-        z += nl
-      }
+    if (layout.neckDiameter != null && layout.neckLength != null) {
+      const nd = layout.neckDiameter
+      const nl = layout.neckLength
+      const neck = new THREE.Mesh(
+        new THREE.CylinderGeometry(nd / 2, nd / 2, nl, 24),
+        matShank,
+      )
+      neck.rotation.x = Math.PI / 2
+      neck.position.z = z + nl / 2
+      group.add(neck)
+      z += nl
     }
 
-    // Shank
-    const remaining = Math.max(oal * 0.15, shankLen * 0.5, oal - z)
-    const shankH = Math.max(remaining, shankLen * 0.6)
+    if (layout.extraBodyLength > 0.001) {
+      const gap = layout.extraBodyLength
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(dia / 2, dia / 2, gap, 32),
+        matCutting,
+      )
+      body.rotation.x = Math.PI / 2
+      body.position.z = z + gap / 2
+      group.add(body)
+      z += gap
+    }
+
+    const shankH = layout.effectiveShankHeight
     const shank = new THREE.Mesh(
       new THREE.CylinderGeometry(shankDia / 2, shankDia / 2, shankH, 32),
       matShank,
@@ -175,30 +199,52 @@ export function ToolPreview({ toolType, params }: Props) {
     shank.rotation.x = Math.PI / 2
     shank.position.z = z + shankH / 2
     group.add(shank)
+    const shankCap = new THREE.Mesh(
+      new THREE.CircleGeometry(shankDia / 2, 32),
+      matShankCap,
+    )
+    shankCap.position.z = z + shankH
+    group.add(shankCap)
 
-    // Center group
-    const box = new THREE.Box3().setFromObject(group)
-    const center = box.getCenter(new THREE.Vector3())
-    group.position.sub(center)
-
-    // Orient tip up-ish for nicer view
+    // Orient tip up-ish, then frame the *oriented* bounds so shank/neck/OAL
+    // stay on camera instead of clipping off the top of the canvas.
     group.rotation.x = -Math.PI / 2.4
     group.rotation.z = Math.PI / 8
+    group.updateMatrixWorld(true)
 
-    const size = box.getSize(new THREE.Vector3()).length()
-    camera.position.set(size * 0.55, size * 0.35, size * 0.7)
+    const rawBox = new THREE.Box3().setFromObject(group)
+    group.position.sub(rawBox.getCenter(new THREE.Vector3()))
+    group.updateMatrixWorld(true)
+
+    const box = new THREE.Box3().setFromObject(group)
+    const size = box.getSize(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z, 0.01)
+    const fov = (camera.fov * Math.PI) / 180
+    const dist = (maxDim / 2 / Math.tan(fov / 2)) * 1.6
+    camera.position.set(dist * 0.72, dist * 0.22, dist * 0.82)
     camera.lookAt(0, 0, 0)
+    camera.near = Math.max(dist / 120, 0.01)
+    camera.far = dist * 24
+    camera.updateProjectionMatrix()
 
-    // Grid helper (subtle)
-    const grid = new THREE.GridHelper(size * 1.5, 10, 0x1e2a32, 0x162028)
-    grid.position.y = -size * 0.35
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.target.set(0, 0, 0)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.08
+    controls.enablePan = false
+    controls.minDistance = dist * 0.35
+    controls.maxDistance = dist * 3
+    controls.update()
+
+    const grid = new THREE.GridHelper(maxDim * 2.2, 10, 0x1e2a32, 0x162028)
+    grid.position.y = box.min.y - maxDim * 0.04
     scene.add(grid)
 
     let frame = 0
     let raf = 0
     const animate = () => {
       raf = requestAnimationFrame(animate)
-      group.rotation.y += 0.008
+      controls.update()
       renderer.render(scene, camera)
       frame++
     }
@@ -218,11 +264,14 @@ export function ToolPreview({ toolType, params }: Props) {
     return () => {
       cancelAnimationFrame(raf)
       ro.disconnect()
+      controls.dispose()
       renderer.dispose()
       matShank.dispose()
       matCutting.dispose()
       matFlute.dispose()
       matTip.dispose()
+      matEnd.dispose()
+      matShankCap.dispose()
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
           obj.geometry.dispose()
@@ -238,7 +287,7 @@ export function ToolPreview({ toolType, params }: Props) {
   return (
     <div className="preview-panel">
       <div className="preview-header">
-        <span className="preview-title">Live 3D preview</span>
+        <span className="preview-title">Live 3D preview · drag to rotate</span>
         <span className="preview-badge">Simplified geometry — not grind sim</span>
       </div>
       <div ref={mountRef} className="preview-canvas" />
