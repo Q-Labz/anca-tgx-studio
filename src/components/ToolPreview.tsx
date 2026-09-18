@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { layoutTool } from '../lib/toolGeometry'
 import type { DrillParams, EndmillParams, ToolType } from '../lib/types'
 
 interface Props {
@@ -73,24 +74,15 @@ export function ToolPreview({ toolType, params }: Props) {
       side: THREE.DoubleSide,
     })
 
-    const scale = 0.12
-    const dia = Math.max(params.diameter, 0.5) * scale
-    const shankDia = Math.max(params.shankDiameter, 0.5) * scale
-    const oal = Math.max(params.overallLength, 1) * scale
-    const fluteLen = Math.min(params.fluteLength, params.overallLength - 0.5) * scale
-    const shankLen = Math.min(params.shankLength, params.overallLength) * scale
+    const layout = layoutTool(toolType, params)
+    const dia = layout.diameter
+    const shankDia = layout.shankDiameter
 
     // Align tool along +Z (tip at +Z, shank toward -Z), then rotate for view
     let z = 0
 
-    // Tip / cutting end
     if (toolType === 'drill') {
-      const drill = params as DrillParams
-      const pointAngle = ((drill.pointAngle || 118) * Math.PI) / 180
-      const half = pointAngle / 2
-      // Cone height derived from the point angle so 118° vs 135° differ visibly:
-      // sharper angle -> taller point, blunter angle -> shorter point.
-      const coneH = Math.max(dia / 2 / Math.tan(half), dia * 0.05)
+      const coneH = layout.coneHeight
       const tip = new THREE.Mesh(
         new THREE.ConeGeometry(dia / 2, coneH, 24),
         matTip,
@@ -99,44 +91,40 @@ export function ToolPreview({ toolType, params }: Props) {
       tip.position.z = z + coneH / 2
       group.add(tip)
       z += coneH
-    } else {
-      const em = params as EndmillParams
-      const cr = Math.min(Math.max(em.cornerRadius, 0), params.diameter / 2) * scale
-      if (cr > 0.001) {
-        // Rounded cutting end (bull-nose; a full ball-nose when corner R =
-        // radius), built by revolving the actual end profile so the corner
-        // radius is visible and scales with the parameter.
-        const R = dia / 2
-        const flat = Math.max(R - cr, 0)
-        const profile: THREE.Vector2[] = [new THREE.Vector2(0, 0)]
-        if (flat > 0) profile.push(new THREE.Vector2(flat, 0))
-        const arcSteps = 10
-        for (let s = 0; s <= arcSteps; s++) {
-          const th = (s / arcSteps) * (Math.PI / 2)
-          profile.push(
-            new THREE.Vector2(flat + cr * Math.sin(th), cr - cr * Math.cos(th)),
-          )
-        }
-        const end = new THREE.Mesh(new THREE.LatheGeometry(profile, 48), matEnd)
-        end.rotation.x = Math.PI / 2
-        end.position.z = z
-        group.add(end)
-        z += cr
-      } else {
-        // Square end — flat cap.
-        const capH = Math.max(dia * 0.06, 0.05)
-        const end = new THREE.Mesh(
-          new THREE.CylinderGeometry(dia / 2, dia / 2, capH, 48),
-          matCutting,
+    } else if (layout.cornerRadius > 0.001) {
+      // Rounded cutting end (bull-nose; a full ball-nose when corner R =
+      // radius), built by revolving the actual end profile so the corner
+      // radius is visible and scales with the parameter.
+      const cr = layout.cornerRadius
+      const R = dia / 2
+      const flat = Math.max(R - cr, 0)
+      const profile: THREE.Vector2[] = [new THREE.Vector2(0, 0)]
+      if (flat > 0) profile.push(new THREE.Vector2(flat, 0))
+      const arcSteps = 10
+      for (let s = 0; s <= arcSteps; s++) {
+        const th = (s / arcSteps) * (Math.PI / 2)
+        profile.push(
+          new THREE.Vector2(flat + cr * Math.sin(th), cr - cr * Math.cos(th)),
         )
-        end.rotation.x = Math.PI / 2
-        end.position.z = z + capH / 2
-        group.add(end)
-        z += capH
       }
+      const end = new THREE.Mesh(new THREE.LatheGeometry(profile, 48), matEnd)
+      end.rotation.x = Math.PI / 2
+      end.position.z = z
+      group.add(end)
+      z += cr
+    } else {
+      const capH = layout.squareCapHeight
+      const end = new THREE.Mesh(
+        new THREE.CylinderGeometry(dia / 2, dia / 2, capH, 48),
+        matCutting,
+      )
+      end.rotation.x = Math.PI / 2
+      end.position.z = z + capH / 2
+      group.add(end)
+      z += capH
     }
 
-    // Fluted section — cylinder with helical groove approximations (thin cylinders offset)
+    const fluteLen = layout.fluteLength
     const fluteBody = new THREE.Mesh(
       new THREE.CylinderGeometry(dia / 2, dia / 2, Math.max(fluteLen, 0.5), 48),
       matCutting,
@@ -145,23 +133,9 @@ export function ToolPreview({ toolType, params }: Props) {
     fluteBody.position.z = z + fluteLen / 2
     group.add(fluteBody)
 
-    // Helical flutes — each groove follows a helix wrapping around the body,
-    // so flutes run down the tool and twist by the helix angle.
-    const fluteCount = Math.max(2, Math.min(8, params.fluteCount | 0))
+    const fluteCount = layout.fluteCount
     const drawnFluteLen = Math.max(fluteLen, 0.5)
-    const helixDeg = toolType === 'endmill' ? ((params as EndmillParams).helixAngle || 30) : 30
-    const helixRad = (helixDeg * Math.PI) / 180
-    const realDia = Math.max(params.diameter, 0.5)
-    const realFluteLen = Math.max(
-      Math.min(params.fluteLength, params.overallLength - 0.5),
-      0.5,
-    )
-    // Total wrap angle over the flute length for a helix of this lead, capped so
-    // very long/steep flutes stay legible.
-    const totalTwist = Math.min(
-      (2 * realFluteLen * Math.tan(helixRad)) / realDia,
-      Math.PI * 4,
-    )
+    const totalTwist = layout.helixTwist
     const grooveRadius = dia * 0.46
     const tubeRadius = Math.max(dia * 0.1, 0.03)
     const segments = Math.max(24, Math.round((totalTwist / (Math.PI * 2)) * 40))
@@ -188,47 +162,32 @@ export function ToolPreview({ toolType, params }: Props) {
     }
     z += fluteLen
 
-    // Optional neck (endmill)
-    let neckAdded = false
-    if (toolType === 'endmill') {
-      const em = params as EndmillParams
-      if (em.neckDiameter != null && em.neckLength != null && em.neckLength > 0) {
-        const nd = Math.max(em.neckDiameter, 0.3) * scale
-        const nl = em.neckLength * scale
-        const neck = new THREE.Mesh(
-          new THREE.CylinderGeometry(nd / 2, nd / 2, nl, 24),
-          matShank,
-        )
-        neck.rotation.x = Math.PI / 2
-        neck.position.z = z + nl / 2
-        group.add(neck)
-        z += nl
-        neckAdded = true
-      }
+    if (layout.neckDiameter != null && layout.neckLength != null) {
+      const nd = layout.neckDiameter
+      const nl = layout.neckLength
+      const neck = new THREE.Mesh(
+        new THREE.CylinderGeometry(nd / 2, nd / 2, nl, 24),
+        matShank,
+      )
+      neck.rotation.x = Math.PI / 2
+      neck.position.z = z + nl / 2
+      group.add(neck)
+      z += nl
     }
 
-    // Shank length honored directly; the leftover length up to the overall
-    // length is filled with a plain body so both parameters change the model.
-    let shankH = Math.max(shankLen, dia * 0.4)
-    const gap = oal - z - shankH
-    if (gap > 0.001) {
-      if (neckAdded) {
-        // A necked tool already stepped down before the shank, so just extend
-        // the shank rather than adding a full-diameter body after the neck.
-        shankH += gap
-      } else {
-        const body = new THREE.Mesh(
-          new THREE.CylinderGeometry(dia / 2, dia / 2, gap, 32),
-          matCutting,
-        )
-        body.rotation.x = Math.PI / 2
-        body.position.z = z + gap / 2
-        group.add(body)
-        z += gap
-      }
+    if (layout.extraBodyLength > 0.001) {
+      const gap = layout.extraBodyLength
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(dia / 2, dia / 2, gap, 32),
+        matCutting,
+      )
+      body.rotation.x = Math.PI / 2
+      body.position.z = z + gap / 2
+      group.add(body)
+      z += gap
     }
 
-    // Shank
+    const shankH = layout.effectiveShankHeight
     const shank = new THREE.Mesh(
       new THREE.CylinderGeometry(shankDia / 2, shankDia / 2, shankH, 32),
       matShank,

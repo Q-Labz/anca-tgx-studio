@@ -169,6 +169,8 @@ button {
 
 .main-stage {
   min-height: 420px;
+  position: sticky;
+  top: 1rem;
 }
 
 .panel {
