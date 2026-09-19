@@ -298,7 +298,9 @@ export function createTwistDrillGeometry(opts: TwistDrillOptions): THREE.BufferG
     const env = z <= coneH ? Math.max(chisel, (z / coneH) * radius) : radius
     const rawWeb = webAt(z, length, radius * opts.webTipFrac, radius * opts.webOuterFrac)
     const web = Math.min(env * 0.92, rawWeb)
-    const fluteOpen = smoothstep((z - coneH * 0.16) / Math.max(coneH * 0.78, 0.001))
+    const solid = Math.max(coneH * 0.22, radius * 0.24)
+    const openSpan = Math.max(coneH * 0.72, radius * 0.5)
+    const fluteOpen = smoothstep((z - solid) / openSpan)
     const twist = (z / length) * opts.twist
     const fade =
       z > length - blend ? smoothstep((z - (length - blend)) / Math.max(blend, 0.0001)) : 0

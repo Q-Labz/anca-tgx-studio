@@ -149,7 +149,7 @@ export function ToolPreview({ toolType, params }: Props) {
     if (toolType === 'drill') {
       // True 118° is ~0.3×D. A modest visual scale keeps 90/118/135 readable
       // without the crayon-cone look of a 2.6× overlay.
-      const coneH = Math.max(layout.coneHeight * 1.7, dia * 0.3)
+      const coneH = Math.max(layout.coneHeight * 1.85, dia * 0.32)
       const fluted = new THREE.Mesh(
         createTwistDrillGeometry({
           radius: dia / 2,
@@ -271,10 +271,10 @@ export function ToolPreview({ toolType, params }: Props) {
     const size = box.getSize(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.y, size.z, 0.01)
     const tipWorld = new THREE.Vector3(0, 0, 0).applyMatrix4(group.matrixWorld)
-    const look = new THREE.Vector3(0, 0, 0).lerp(tipWorld, 0.3)
+    const look = new THREE.Vector3(0, 0, 0).lerp(tipWorld, 0.22)
     const fov = (camera.fov * Math.PI) / 180
-    const dist = (maxDim / 2 / Math.tan(fov / 2)) * 1.28
-    camera.position.set(dist * 0.58, dist * 0.3, dist * 0.8)
+    const dist = (maxDim / 2 / Math.tan(fov / 2)) * 0.96
+    camera.position.set(dist * 0.64, dist * 0.18, dist * 0.68)
     camera.lookAt(look)
     camera.near = Math.max(dist / 140, 0.01)
     camera.far = dist * 24
@@ -289,13 +289,13 @@ export function ToolPreview({ toolType, params }: Props) {
     controls.maxDistance = dist * 3
     controls.update()
 
-    const grid = new THREE.GridHelper(maxDim * 2.4, 16, 0x1a262e, 0x121a20)
-    grid.position.y = box.min.y - maxDim * 0.035
+    const grid = new THREE.GridHelper(maxDim * 1.35, 12, 0x1a262e, 0x121a20)
+    grid.position.y = box.min.y - maxDim * 0.028
     scene.add(grid)
 
-    const ground = new THREE.Mesh(new THREE.CircleGeometry(maxDim * 1.35, 72), matGround)
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(maxDim * 0.62, 72), matGround)
     ground.rotation.x = -Math.PI / 2
-    ground.position.y = box.min.y - maxDim * 0.034
+    ground.position.y = box.min.y - maxDim * 0.027
     scene.add(ground)
 
     let raf = 0
