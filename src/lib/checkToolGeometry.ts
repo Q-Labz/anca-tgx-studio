@@ -1,5 +1,6 @@
 import { DEFAULT_DRILL, DEFAULT_ENDMILL } from './types'
 import { layoutTool, PREVIEW_SCALE } from './toolGeometry'
+import { envelopeRadius, profileRadius } from './toolMesh'
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg)
@@ -76,6 +77,24 @@ assert(drill3.fluteCount === 3, 'drill flute count 3 should be honored')
 
 const drillFat = layoutTool('drill', { ...DEFAULT_DRILL, diameter: 16 })
 assert(drillFat.diameter > drill118.diameter, 'drill diameter should scale')
+
+const R = 1
+const web = 0.22
+const margin = profileRadius(0, 2, R, web, 0.1)
+const gullet = profileRadius(Math.PI / 2, 2, R, web, 0.1)
+assert(margin > 0.95 * R, `margin should sit near OD, got ${margin}`)
+assert(gullet < 0.55 * R, `flute gullet should dip toward the web, got ${gullet}`)
+assert(gullet < margin, 'gullet must be deeper than the margin')
+
+const envTip = envelopeRadius(0, R, 0.5, 'cone', 0)
+const envMid = envelopeRadius(0.25, R, 0.5, 'cone', 0)
+const envFull = envelopeRadius(0.5, R, 0.5, 'cone', 0)
+assert(envTip < envMid && envMid < envFull, 'cone envelope must grow from the tip')
+assert(nearly(envFull, R), 'cone envelope reaches OD at the point length')
+
+const ball0 = envelopeRadius(0, R, R, 'bull', R)
+const ballHalf = envelopeRadius(R * 0.5, R, R, 'bull', R)
+assert(ball0 < ballHalf && ballHalf < R, 'ball-nose envelope should be a hemisphere')
 
 console.log(
   JSON.stringify(
