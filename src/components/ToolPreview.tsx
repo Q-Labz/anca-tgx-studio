@@ -136,6 +136,18 @@ export function ToolPreview({ toolType, params }: Props) {
       matCutting,
     )
     group.add(fluted)
+    if (toolType === 'drill' && layout.coneHeight > 0.001) {
+      // Same-material cone so the point reads as a single tip at catalog
+      // distance (the helical lands alone look forked from far away).
+      const coneH = layout.coneHeight
+      const point = new THREE.Mesh(
+        new THREE.ConeGeometry((dia / 2) * 1.01, coneH, 64),
+        matCutting,
+      )
+      point.rotation.x = -Math.PI / 2
+      point.position.z = coneH / 2
+      group.add(point)
+    }
     let z = fluteLen + (tipShape === 'square' ? 0 : tipLength)
 
     if (tipShape === 'square') {
@@ -212,7 +224,7 @@ export function ToolPreview({ toolType, params }: Props) {
     const size = box.getSize(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.y, size.z, 0.01)
     const fov = (camera.fov * Math.PI) / 180
-    const dist = (maxDim / 2 / Math.tan(fov / 2)) * 1.55
+    const dist = (maxDim / 2 / Math.tan(fov / 2)) * 1.42
     camera.position.set(dist * 0.7, dist * 0.24, dist * 0.86)
     camera.lookAt(0, 0, 0)
     camera.near = Math.max(dist / 120, 0.01)
