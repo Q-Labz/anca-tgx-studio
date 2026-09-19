@@ -260,7 +260,6 @@ export function ToolPreview({ toolType, params }: Props) {
     group.add(shankCap)
 
     group.rotation.x = -Math.PI / 2.35
-    group.rotation.y = 0.62
     group.rotation.z = Math.PI / 8
     group.updateMatrixWorld(true)
 
@@ -275,7 +274,7 @@ export function ToolPreview({ toolType, params }: Props) {
     const look = new THREE.Vector3(0, 0, 0).lerp(tipWorld, 0.08)
     const fov = (camera.fov * Math.PI) / 180
     const dist = (maxDim / 2 / Math.tan(fov / 2)) * 1.14
-    camera.position.set(dist * 0.68, dist * 0.2, dist * 0.74)
+    camera.position.set(dist * 0.86, dist * 0.22, dist * 0.5)
     camera.lookAt(look)
     camera.near = Math.max(dist / 140, 0.01)
     camera.far = dist * 24
