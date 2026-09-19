@@ -260,7 +260,8 @@ export function ToolPreview({ toolType, params }: Props) {
     group.add(shankCap)
 
     group.rotation.x = -Math.PI / 2.35
-    group.rotation.z = Math.PI / 7
+    group.rotation.y = 0.62
+    group.rotation.z = Math.PI / 8
     group.updateMatrixWorld(true)
 
     const rawBox = new THREE.Box3().setFromObject(group)
