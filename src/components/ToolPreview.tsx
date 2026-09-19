@@ -120,35 +120,57 @@ export function ToolPreview({ toolType, params }: Props) {
       marginFrac = 0.14
     }
 
-    const fluted = new THREE.Mesh(
-      createFlutedToolGeometry({
-        radius: dia / 2,
-        length: fluteLen + (tipShape === 'square' ? 0 : tipLength),
-        fluteCount: layout.fluteCount,
-        twist: layout.helixTwist,
-        tipLength,
-        tipShape,
-        cornerRadius,
-        webOuterFrac: webOuter,
-        webTipFrac: webTip,
-        marginFrac,
-      }),
-      matCutting,
-    )
-    group.add(fluted)
-    if (toolType === 'drill' && layout.coneHeight > 0.001) {
-      // Same-material cone so the point reads as a single tip at catalog
-      // distance (the helical lands alone look forked from far away).
-      const coneH = layout.coneHeight
+    let z = 0
+    if (toolType === 'drill') {
+      const coneH = Math.max(layout.coneHeight, dia * 0.08)
       const point = new THREE.Mesh(
-        new THREE.ConeGeometry((dia / 2) * 1.01, coneH, 64),
+        new THREE.ConeGeometry(dia / 2, coneH, 64),
         matCutting,
       )
       point.rotation.x = -Math.PI / 2
       point.position.z = coneH / 2
       group.add(point)
+
+      // Flutes are a constant-diameter helix that starts on the cone
+      // so the point stays a single tip instead of two separate lands.
+      const overlap = coneH * 0.55
+      const fluted = new THREE.Mesh(
+        createFlutedToolGeometry({
+          radius: dia / 2,
+          length: fluteLen,
+          fluteCount: layout.fluteCount,
+          twist: layout.helixTwist,
+          tipLength: 0,
+          tipShape: 'square',
+          cornerRadius: 0,
+          webOuterFrac: webOuter,
+          webTipFrac: webTip,
+          marginFrac,
+        }),
+        matCutting,
+      )
+      fluted.position.z = coneH - overlap
+      group.add(fluted)
+      z = coneH - overlap + fluteLen
+    } else {
+      const fluted = new THREE.Mesh(
+        createFlutedToolGeometry({
+          radius: dia / 2,
+          length: fluteLen + (tipShape === 'square' ? 0 : tipLength),
+          fluteCount: layout.fluteCount,
+          twist: layout.helixTwist,
+          tipLength,
+          tipShape,
+          cornerRadius,
+          webOuterFrac: webOuter,
+          webTipFrac: webTip,
+          marginFrac,
+        }),
+        matCutting,
+      )
+      group.add(fluted)
+      z = fluteLen + (tipShape === 'square' ? 0 : tipLength)
     }
-    let z = fluteLen + (tipShape === 'square' ? 0 : tipLength)
 
     if (tipShape === 'square') {
       const face = new THREE.Mesh(
