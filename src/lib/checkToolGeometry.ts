@@ -1,6 +1,6 @@
 import { DEFAULT_DRILL, DEFAULT_ENDMILL } from './types'
 import { layoutTool, PREVIEW_SCALE } from './toolGeometry'
-import { envelopeRadius, profileRadius } from './toolMesh'
+import { drillStationRadius, envelopeRadius, profileRadius } from './toolMesh'
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg)
@@ -85,6 +85,19 @@ const gullet = profileRadius(Math.PI / 2, 2, R, web, 0.1)
 assert(margin > 0.95 * R, `margin should sit near OD, got ${margin}`)
 assert(gullet < 0.55 * R, `flute gullet should dip toward the web, got ${gullet}`)
 assert(gullet < margin, 'gullet must be deeper than the margin')
+
+const tipLip = drillStationRadius(0, 2, R, web, 0.1, 0.15)
+const tipFlank = drillStationRadius(Math.PI * 0.35, 2, R, web, 0.1, 0.15)
+const tipGullet = drillStationRadius(Math.PI * 0.92, 2, R, web, 0.1, 0.15)
+assert(tipLip > 0.98 * R, `closed-point lip should sit on the cone, got ${tipLip}`)
+assert(tipFlank > 0.9 * R, `point flank should stay a ground facet, got ${tipFlank}`)
+assert(tipFlank < tipLip, 'relief facet must sit behind the cutting lip')
+assert(tipGullet < tipFlank, 'even a barely-open flute must sit inside the flank')
+
+const openLip = drillStationRadius(0, 2, R, web, 0.1, 1)
+const openGullet = drillStationRadius(Math.PI * 0.55, 2, R, web, 0.1, 1)
+assert(openLip > 0.98 * R, `open-body margin should sit near OD, got ${openLip}`)
+assert(openGullet < 0.55 * R, `open-body gullet should reach the web, got ${openGullet}`)
 
 const envTip = envelopeRadius(0, R, 0.5, 'cone', 0)
 const envMid = envelopeRadius(0.25, R, 0.5, 'cone', 0)

@@ -72,6 +72,51 @@ export function profileRadius(
   return mix(clearance, outerR, t)
 }
 
+/**
+ * Twist-drill station: cutting lip + margin at OD, primary relief facet, then
+ * a helical gullet. `fluteOpen` 0 is a nearly solid point (two ground faces);
+ * 1 is the full body flute.
+ */
+export function drillStationRadius(
+  theta: number,
+  fluteCount: number,
+  outerR: number,
+  webR: number,
+  marginFrac: number,
+  fluteOpen: number,
+): number {
+  const n = Math.max(2, fluteCount)
+  const sector = (Math.PI * 2) / n
+  const local = ((theta % sector) + sector) % sector
+  const u = local / sector
+  const web = Math.min(Math.max(webR, outerR * 0.05), outerR * 0.9)
+  const open = Math.min(Math.max(fluteOpen, 0), 1)
+  const land = Math.min(Math.max(marginFrac, 0.055), 0.16)
+  const lipW = mix(0.02, land, open)
+  const flankEnd = mix(0.9, land + 0.08, open)
+  const fluteEnd = mix(0.965, 0.8, open)
+
+  if (u <= lipW) return outerR
+
+  if (u < flankEnd) {
+    const t = (u - lipW) / Math.max(flankEnd - lipW, 1e-4)
+    const drop = mix(0.032, 0.075, open) * t * t
+    return outerR * (1 - drop)
+  }
+
+  if (u < fluteEnd) {
+    const t = (u - flankEnd) / Math.max(fluteEnd - flankEnd, 1e-4)
+    const dip = Math.pow(Math.sin(t * Math.PI), 0.82)
+    const deep = mix(outerR * 0.86, web, open)
+    const shallow = mix(outerR * 0.97, outerR * 0.93, open)
+    return Math.max(web, mix(shallow, deep, dip))
+  }
+
+  const t = smoothstep((u - fluteEnd) / Math.max(1 - fluteEnd, 1e-4))
+  const heel = outerR * mix(0.965, 0.97, open)
+  return mix(heel, outerR, t)
+}
+
 export function envelopeRadius(
   z: number,
   radius: number,
@@ -112,12 +157,20 @@ export function createFlutedToolGeometry(opts: FlutedToolOptions): THREE.BufferG
   const cols = radialSegs
   const rows = lengthSegs + 1
   const ringCount = rows
-  const positions = new Float32Array((ringCount * cols + 2) * 3)
+  const vertCount = ringCount * cols + 2
+  const positions = new Float32Array(vertCount * 3)
+  const colors = new Float32Array(vertCount * 3)
+  const uvs = new Float32Array(vertCount * 2)
 
-  const set = (idx: number, x: number, y: number, z: number) => {
+  const set = (idx: number, x: number, y: number, z: number, shade: number, u: number, v: number) => {
     positions[idx * 3] = x
     positions[idx * 3 + 1] = y
     positions[idx * 3 + 2] = z
+    colors[idx * 3] = shade
+    colors[idx * 3 + 1] = shade
+    colors[idx * 3 + 2] = shade
+    uvs[idx * 2] = u
+    uvs[idx * 2 + 1] = v
   }
 
   for (let i = 0; i < rows; i++) {
@@ -155,14 +208,15 @@ export function createFlutedToolGeometry(opts: FlutedToolOptions): THREE.BufferG
       const pr = profileRadius(theta0, n, env, web, opts.marginFrac)
       const r = mix(env, pr, tipOpen * (1 - fade))
       const a = theta0 + twist
-      set(i * cols + j, Math.cos(a) * r, Math.sin(a) * r, z)
+      const shade = r > env * 0.978 ? 1 : mix(0.52, 0.9, r / Math.max(env, 1e-4))
+      set(i * cols + j, Math.cos(a) * r, Math.sin(a) * r, z, shade, j / cols, z / length)
     }
   }
 
   const frontCenter = ringCount * cols
   const backCenter = frontCenter + 1
-  set(frontCenter, 0, 0, 0)
-  set(backCenter, 0, 0, length)
+  set(frontCenter, 0, 0, 0, 0.82, 0.5, 0)
+  set(backCenter, 0, 0, length, 0.78, 0.5, 1)
 
   const indices: number[] = []
   for (let i = 0; i < lengthSegs; i++) {
@@ -184,6 +238,119 @@ export function createFlutedToolGeometry(opts: FlutedToolOptions): THREE.BufferG
 
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+  geo.setIndex(indices)
+  geo.computeVertexNormals()
+  return geo
+}
+
+export interface TwistDrillOptions {
+  radius: number
+  fluteLength: number
+  coneHeight: number
+  fluteCount: number
+  twist: number
+  webOuterFrac: number
+  webTipFrac: number
+  marginFrac: number
+  splitPoint: boolean
+  radialSegs?: number
+  lengthSegs?: number
+}
+
+/**
+ * Single-body twist drill: conical envelope, chisel, cutting lips, primary
+ * relief facets, then helical gullets / margins. No separate cone overlay.
+ */
+export function createTwistDrillGeometry(opts: TwistDrillOptions): THREE.BufferGeometry {
+  const radialSegs = Math.max(64, opts.radialSegs ?? 168)
+  const lengthSegs = Math.max(40, opts.lengthSegs ?? 150)
+  const radius = Math.max(opts.radius, 0.01)
+  const coneH = Math.max(opts.coneHeight, radius * 0.2)
+  const fluteLen = Math.max(opts.fluteLength, 0.05)
+  const length = coneH + fluteLen
+  const n = Math.max(2, opts.fluteCount)
+  const blend = Math.min(fluteLen * 0.14, radius * 1.15)
+  const chisel = radius * 0.045
+  const cols = radialSegs
+  const rows = lengthSegs + 1
+  const vertCount = rows * cols + 2
+  const positions = new Float32Array(vertCount * 3)
+  const colors = new Float32Array(vertCount * 3)
+  const uvs = new Float32Array(vertCount * 2)
+
+  const set = (idx: number, x: number, y: number, z: number, shade: number, u: number, v: number) => {
+    positions[idx * 3] = x
+    positions[idx * 3 + 1] = y
+    positions[idx * 3 + 2] = z
+    colors[idx * 3] = shade
+    colors[idx * 3 + 1] = shade
+    colors[idx * 3 + 2] = shade
+    uvs[idx * 2] = u
+    uvs[idx * 2 + 1] = v
+  }
+
+  for (let i = 0; i < rows; i++) {
+    const t = i / lengthSegs
+    // Spend ~42% of the rings on the point so lips / chisel stay sharp.
+    const z = t <= 0.42 ? (t / 0.42) * coneH : coneH + ((t - 0.42) / 0.58) * fluteLen
+    const env = z <= coneH ? Math.max(chisel, (z / coneH) * radius) : radius
+    const rawWeb = webAt(z, length, radius * opts.webTipFrac, radius * opts.webOuterFrac)
+    const web = Math.min(env * 0.92, rawWeb)
+    const fluteOpen = smoothstep((z - coneH * 0.16) / Math.max(coneH * 0.78, 0.001))
+    const twist = (z / length) * opts.twist
+    const fade =
+      z > length - blend ? smoothstep((z - (length - blend)) / Math.max(blend, 0.0001)) : 0
+
+    for (let j = 0; j < cols; j++) {
+      const theta0 = (j / cols) * Math.PI * 2
+      let r = drillStationRadius(theta0, n, env, web, opts.marginFrac, fluteOpen)
+      if (opts.splitPoint && z < coneH * 0.3) {
+        const sector = (Math.PI * 2) / n
+        const u = (((theta0 % sector) + sector) % sector) / sector
+        const strength = 1 - smoothstep(z / Math.max(coneH * 0.3, 0.001))
+        const mid = Math.abs(u - mix(0.42, 0.12, fluteOpen))
+        if (mid < 0.1) {
+          r *= 1 - strength * 0.28 * (1 - mid / 0.1)
+        }
+      }
+      r = mix(r, env, fade)
+      r = Math.min(env, Math.max(chisel * 0.65, r))
+      const a = theta0 + twist
+      const land = r > env * 0.978
+      const shade = land ? 1 : mix(0.48, 0.88, r / Math.max(env, 1e-4))
+      set(i * cols + j, Math.cos(a) * r, Math.sin(a) * r, z, shade, j / cols, z / length)
+    }
+  }
+
+  const frontCenter = rows * cols
+  const backCenter = frontCenter + 1
+  set(frontCenter, 0, 0, 0, 0.7, 0.5, 0)
+  set(backCenter, 0, 0, length, 0.76, 0.5, 1)
+
+  const indices: number[] = []
+  for (let i = 0; i < lengthSegs; i++) {
+    for (let j = 0; j < cols; j++) {
+      const jn = (j + 1) % cols
+      const a = i * cols + j
+      const b = i * cols + jn
+      const c = (i + 1) * cols + jn
+      const d = (i + 1) * cols + j
+      indices.push(a, b, c, a, c, d)
+    }
+  }
+  for (let j = 0; j < cols; j++) {
+    const jn = (j + 1) % cols
+    indices.push(frontCenter, jn, j)
+    const b = lengthSegs * cols
+    indices.push(backCenter, b + j, b + jn)
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
   geo.setIndex(indices)
   geo.computeVertexNormals()
   return geo
@@ -191,14 +358,38 @@ export function createFlutedToolGeometry(opts: FlutedToolOptions): THREE.BufferG
 
 export function coatingHex(coating: string, material: ToolMaterial): number {
   const c = coating.trim().toLowerCase()
-  if (c.includes('ticn')) return 0x6b5340
-  if (c.includes('altin') || c.includes('tialn') || c.includes('alcrn')) return 0x3c3a46
-  if (c.includes('tin')) return 0xd4a017
-  if (c.includes('diamond') || c.includes('dlc') || c.includes('amorphous')) return 0x222226
+  if (c.includes('ticn')) return 0x6e5640
+  if (c.includes('altin') || c.includes('tialn') || c.includes('alcrn')) return 0x2c2a34
+  if (c.includes('tin')) return 0xe1b33a
+  if (c.includes('diamond') || c.includes('dlc') || c.includes('amorphous')) return 0x1c1c20
   if (c.includes('uncoated') || c.includes('none') || c === '') {
-    return material === 'carbide' ? 0xc5ccd3 : 0xb89a58
+    return material === 'carbide' ? 0xc8cdd3 : 0xc4a45a
   }
-  return material === 'carbide' ? 0xc5ccd3 : 0xb89a58
+  return material === 'carbide' ? 0xc8cdd3 : 0xc4a45a
+}
+
+export interface CoatingLook {
+  roughness: number
+  clearcoat: number
+  clearcoatRoughness: number
+  metalness: number
+}
+
+export function coatingLook(coating: string): CoatingLook {
+  const c = coating.trim().toLowerCase()
+  if (c.includes('tin') && !c.includes('altin') && !c.includes('tialn') && !c.includes('ticn')) {
+    return { roughness: 0.15, clearcoat: 0.58, clearcoatRoughness: 0.16, metalness: 0.98 }
+  }
+  if (c.includes('altin') || c.includes('tialn') || c.includes('alcrn')) {
+    return { roughness: 0.26, clearcoat: 0.34, clearcoatRoughness: 0.28, metalness: 0.96 }
+  }
+  if (c.includes('diamond') || c.includes('dlc') || c.includes('amorphous')) {
+    return { roughness: 0.2, clearcoat: 0.7, clearcoatRoughness: 0.12, metalness: 0.9 }
+  }
+  if (c.includes('ticn')) {
+    return { roughness: 0.22, clearcoat: 0.4, clearcoatRoughness: 0.22, metalness: 0.96 }
+  }
+  return { roughness: 0.24, clearcoat: 0.22, clearcoatRoughness: 0.32, metalness: 0.94 }
 }
 
 export function substrateHex(material: ToolMaterial): number {
