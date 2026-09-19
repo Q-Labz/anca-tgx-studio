@@ -102,8 +102,8 @@ export function webAt(z: number, length: number, tipWeb: number, outerWeb: numbe
 }
 
 export function createFlutedToolGeometry(opts: FlutedToolOptions): THREE.BufferGeometry {
-  const radialSegs = Math.max(48, opts.radialSegs ?? 96)
-  const lengthSegs = Math.max(24, opts.lengthSegs ?? 72)
+  const radialSegs = Math.max(48, opts.radialSegs ?? 120)
+  const lengthSegs = Math.max(24, opts.lengthSegs ?? 100)
   const length = Math.max(opts.length, 0.05)
   const radius = Math.max(opts.radius, 0.01)
   const n = Math.max(2, opts.fluteCount)
@@ -122,8 +122,14 @@ export function createFlutedToolGeometry(opts: FlutedToolOptions): THREE.BufferG
 
   for (let i = 0; i < rows; i++) {
     const t = i / lengthSegs
-    const z = t * length
-    const twist = t * opts.twist
+    const tipSpan = opts.tipLength > 0.001 ? Math.min(0.4, opts.tipLength / length + 0.06) : 0.1
+    const tipZ = Math.max(opts.tipLength, 0)
+    const z =
+      t <= tipSpan
+        ? (t / Math.max(tipSpan, 0.0001)) * (tipZ || length * 0.08)
+        : (tipZ || length * 0.08) +
+          ((t - tipSpan) / Math.max(1 - tipSpan, 0.0001)) * (length - (tipZ || length * 0.08))
+    const twist = (z / length) * opts.twist
     const env = envelopeRadius(z, radius, opts.tipLength, opts.tipShape, opts.cornerRadius)
     const web = Math.min(
       env * 0.95,
@@ -131,11 +137,21 @@ export function createFlutedToolGeometry(opts: FlutedToolOptions): THREE.BufferG
     )
     const fade =
       z > length - blend ? smoothstep((z - (length - blend)) / Math.max(blend, 0.0001)) : 0
+    // Keep the tip a solid envelope (cone / bull / face) and open the
+    // gullets behind it so the point does not split into separate lobes.
+    let tipOpen = 1
+    if (opts.tipShape === 'cone' && opts.tipLength > 0.001) {
+      tipOpen = smoothstep((z - opts.tipLength * 0.12) / Math.max(opts.tipLength * 0.88, 0.001))
+    } else if (opts.tipShape === 'bull' && opts.cornerRadius > 0.001) {
+      tipOpen = smoothstep(z / Math.max(opts.cornerRadius * 0.8, 0.001))
+    } else if (opts.tipShape === 'square') {
+      tipOpen = smoothstep(z / Math.max(radius * 0.16, 0.01))
+    }
 
     for (let j = 0; j < cols; j++) {
       const theta0 = (j / cols) * Math.PI * 2
       const pr = profileRadius(theta0, n, env, web, opts.marginFrac)
-      const r = mix(pr, env, fade)
+      const r = mix(env, pr, tipOpen * (1 - fade))
       const a = theta0 + twist
       set(i * cols + j, Math.cos(a) * r, Math.sin(a) * r, z)
     }
