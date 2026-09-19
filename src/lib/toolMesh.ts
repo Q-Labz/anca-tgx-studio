@@ -131,10 +131,12 @@ export function createFlutedToolGeometry(opts: FlutedToolOptions): THREE.BufferG
           ((t - tipSpan) / Math.max(1 - tipSpan, 0.0001)) * (length - (tipZ || length * 0.08))
     const twist = (z / length) * opts.twist
     const env = envelopeRadius(z, radius, opts.tipLength, opts.tipShape, opts.cornerRadius)
-    const web = Math.min(
-      env * 0.95,
-      webAt(z, length, radius * opts.webTipFrac, radius * opts.webOuterFrac),
-    )
+    const rawWeb = webAt(z, length, radius * opts.webTipFrac, radius * opts.webOuterFrac)
+    const tipProtect =
+      opts.tipLength > 0.001
+        ? 1 - smoothstep(z / Math.max(opts.tipLength * 1.35, 0.001))
+        : 0
+    const web = Math.min(env * 0.95, mix(rawWeb, env * 0.72, tipProtect))
     const fade =
       z > length - blend ? smoothstep((z - (length - blend)) / Math.max(blend, 0.0001)) : 0
     // Keep the tip a solid envelope (cone / bull / face) and open the

@@ -101,9 +101,9 @@ export function ToolPreview({ toolType, params }: Props) {
     if (toolType === 'drill') {
       tipShape = 'cone'
       tipLength = layout.coneHeight
-      webOuter = 0.22
+      webOuter = 0.28
       const note = (params as DrillParams).webThinningNote.toLowerCase()
-      webTip = note.includes('split') || note.includes('thin') ? 0.08 : 0.12
+      webTip = note.includes('split') || note.includes('thin') ? 0.14 : 0.18
       marginFrac = 0.1
     } else if (layout.cornerRadius > 0.001) {
       tipShape = 'bull'
