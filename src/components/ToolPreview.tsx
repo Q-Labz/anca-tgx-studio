@@ -271,10 +271,10 @@ export function ToolPreview({ toolType, params }: Props) {
     const size = box.getSize(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.y, size.z, 0.01)
     const tipWorld = new THREE.Vector3(0, 0, 0).applyMatrix4(group.matrixWorld)
-    const look = new THREE.Vector3(0, 0, 0).lerp(tipWorld, 0.22)
+    const look = new THREE.Vector3(0, 0, 0).lerp(tipWorld, 0.08)
     const fov = (camera.fov * Math.PI) / 180
-    const dist = (maxDim / 2 / Math.tan(fov / 2)) * 0.96
-    camera.position.set(dist * 0.64, dist * 0.18, dist * 0.68)
+    const dist = (maxDim / 2 / Math.tan(fov / 2)) * 1.14
+    camera.position.set(dist * 0.68, dist * 0.2, dist * 0.74)
     camera.lookAt(look)
     camera.near = Math.max(dist / 140, 0.01)
     camera.far = dist * 24

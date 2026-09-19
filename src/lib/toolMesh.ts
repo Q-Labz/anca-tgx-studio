@@ -308,13 +308,17 @@ export function createTwistDrillGeometry(opts: TwistDrillOptions): THREE.BufferG
     for (let j = 0; j < cols; j++) {
       const theta0 = (j / cols) * Math.PI * 2
       let r = drillStationRadius(theta0, n, env, web, opts.marginFrac, fluteOpen)
+      // Hold a solid cone through the first part of the point so the two
+      // helical lands meet at one chisel instead of forking.
+      const core = 1 - smoothstep((z - coneH * 0.42) / Math.max(coneH * 0.34, 0.001))
+      r = mix(r, env, core)
       if (opts.splitPoint && z < coneH * 0.3) {
         const sector = (Math.PI * 2) / n
         const u = (((theta0 % sector) + sector) % sector) / sector
         const strength = 1 - smoothstep(z / Math.max(coneH * 0.3, 0.001))
-        const mid = Math.abs(u - mix(0.42, 0.12, fluteOpen))
-        if (mid < 0.1) {
-          r *= 1 - strength * 0.28 * (1 - mid / 0.1)
+        const mid = Math.abs(u - 0.5)
+        if (mid < 0.12) {
+          r *= 1 - strength * 0.22 * (1 - mid / 0.12)
         }
       }
       r = mix(r, env, fade)
