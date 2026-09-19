@@ -122,7 +122,9 @@ export function ToolPreview({ toolType, params }: Props) {
 
     let z = 0
     if (toolType === 'drill') {
-      const coneH = Math.max(layout.coneHeight, dia * 0.08)
+      // True 118° height is ~0.3×D and vanishes at catalog distance.
+      // Scale the visible cone up but keep 90°/118°/135° proportions.
+      const coneH = Math.max(layout.coneHeight * 2.6, dia * 0.42)
       const point = new THREE.Mesh(
         new THREE.ConeGeometry(dia / 2, coneH, 64),
         matCutting,
