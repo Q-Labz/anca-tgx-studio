@@ -133,7 +133,6 @@ export function ToolPreview({ toolType, params }: Props) {
 
       // Flutes are a constant-diameter helix that starts on the cone
       // so the point stays a single tip instead of two separate lands.
-      const overlap = coneH * 0.55
       const fluted = new THREE.Mesh(
         createFlutedToolGeometry({
           radius: dia / 2,
@@ -149,9 +148,9 @@ export function ToolPreview({ toolType, params }: Props) {
         }),
         matCutting,
       )
-      fluted.position.z = coneH - overlap
+      fluted.position.z = coneH * 0.92
       group.add(fluted)
-      z = coneH - overlap + fluteLen
+      z = coneH * 0.92 + fluteLen
     } else {
       const fluted = new THREE.Mesh(
         createFlutedToolGeometry({
