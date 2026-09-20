@@ -1,6 +1,11 @@
 import { DEFAULT_DRILL, DEFAULT_ENDMILL } from './types'
 import { layoutTool, PREVIEW_SCALE } from './toolGeometry'
-import { drillStationRadius, envelopeRadius, profileRadius } from './toolMesh'
+import {
+  createFlutedToolGeometry,
+  drillStationRadius,
+  envelopeRadius,
+  profileRadius,
+} from './toolMesh'
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg)
@@ -108,6 +113,36 @@ assert(nearly(envFull, R), 'cone envelope reaches OD at the point length')
 const ball0 = envelopeRadius(0, R, R, 'bull', R)
 const ballHalf = envelopeRadius(R * 0.5, R, R, 'bull', R)
 assert(ball0 < ballHalf && ballHalf < R, 'ball-nose envelope should be a hemisphere')
+
+const endCols = 64
+const endmillEnd = createFlutedToolGeometry({
+  radius: R,
+  length: 4,
+  fluteCount: 4,
+  twist: 1.2,
+  tipLength: 0,
+  tipShape: 'square',
+  cornerRadius: 0,
+  webOuterFrac: 0.4,
+  webTipFrac: 0.3,
+  marginFrac: 0.12,
+  radialSegs: endCols,
+  lengthSegs: 32,
+})
+const endPos = endmillEnd.getAttribute('position')
+assert(endPos != null, 'endmill geometry must have positions')
+let endMin = Infinity
+let endMax = 0
+for (let j = 0; j < endCols; j++) {
+  const x = endPos.getX(j)
+  const y = endPos.getY(j)
+  const r = Math.hypot(x, y)
+  endMin = Math.min(endMin, r)
+  endMax = Math.max(endMax, r)
+}
+assert(endMax > 0.95 * R, `endmill end land should sit near OD, got ${endMax}`)
+assert(endMin < 0.55 * R, `endmill end gullet should open at the face, got ${endMin}`)
+assert(endMin < endMax * 0.7, 'endmill end view must show flute openings, not a solid disk')
 
 console.log(
   JSON.stringify(

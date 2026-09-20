@@ -185,22 +185,18 @@ export function createFlutedToolGeometry(opts: FlutedToolOptions): THREE.BufferG
     const twist = (z / length) * opts.twist
     const env = envelopeRadius(z, radius, opts.tipLength, opts.tipShape, opts.cornerRadius)
     const rawWeb = webAt(z, length, radius * opts.webTipFrac, radius * opts.webOuterFrac)
+    // Only drills keep a solid envelope at the point. Endmills stay open
+    // through the cutting end so the gullets read in the end view.
     const tipProtect =
-      opts.tipLength > 0.001
+      opts.tipShape === 'cone' && opts.tipLength > 0.001
         ? 1 - smoothstep(z / Math.max(opts.tipLength * 1.35, 0.001))
         : 0
     const web = Math.min(env * 0.95, mix(rawWeb, env * 0.72, tipProtect))
     const fade =
       z > length - blend ? smoothstep((z - (length - blend)) / Math.max(blend, 0.0001)) : 0
-    // Keep the tip a solid envelope (cone / bull / face) and open the
-    // gullets behind it so the point does not split into separate lobes.
     let tipOpen = 1
     if (opts.tipShape === 'cone' && opts.tipLength > 0.001) {
       tipOpen = smoothstep((z - opts.tipLength * 0.12) / Math.max(opts.tipLength * 0.88, 0.001))
-    } else if (opts.tipShape === 'bull' && opts.cornerRadius > 0.001) {
-      tipOpen = smoothstep(z / Math.max(opts.cornerRadius * 0.8, 0.001))
-    } else if (opts.tipShape === 'square') {
-      tipOpen = smoothstep(z / Math.max(radius * 0.16, 0.01))
     }
 
     for (let j = 0; j < cols; j++) {
@@ -209,7 +205,14 @@ export function createFlutedToolGeometry(opts: FlutedToolOptions): THREE.BufferG
       const r = mix(env, pr, tipOpen * (1 - fade))
       const a = theta0 + twist
       const shade = r > env * 0.978 ? 1 : mix(0.52, 0.9, r / Math.max(env, 1e-4))
-      set(i * cols + j, Math.cos(a) * r, Math.sin(a) * r, z, shade, j / cols, z / length)
+      // Recess gullets just behind the end teeth so the flutes show as
+      // openings instead of a flat cap.
+      const gashT =
+        opts.tipShape === 'cone'
+          ? 0
+          : 1 - smoothstep(z / Math.max(radius * 0.28, opts.cornerRadius * 0.9, 0.01))
+      const gash = gashT * (1 - r / Math.max(env, 1e-4)) * radius * 0.16
+      set(i * cols + j, Math.cos(a) * r, Math.sin(a) * r, z + gash, shade, j / cols, z / length)
     }
   }
 

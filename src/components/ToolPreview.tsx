@@ -135,14 +135,14 @@ export function ToolPreview({ toolType, params }: Props) {
       tipLength = layout.cornerRadius
       cornerRadius = layout.cornerRadius
       webOuter = layout.fluteCount >= 6 ? 0.55 : 0.4
-      webTip = webOuter
-      marginFrac = 0.14
+      webTip = Math.max(webOuter - 0.08, 0.28)
+      marginFrac = 0.12
     } else {
       tipShape = 'square'
       tipLength = 0
       webOuter = layout.fluteCount >= 6 ? 0.55 : 0.4
-      webTip = webOuter
-      marginFrac = 0.14
+      webTip = Math.max(webOuter - 0.1, 0.26)
+      marginFrac = 0.12
     }
 
     let z = 0
@@ -184,15 +184,6 @@ export function ToolPreview({ toolType, params }: Props) {
       )
       group.add(fluted)
       z = fluteLen + (tipShape === 'square' ? 0 : tipLength)
-    }
-
-    if (tipShape === 'square') {
-      const face = new THREE.Mesh(
-        new THREE.CircleGeometry(dia / 2, 64),
-        matCuttingSolid,
-      )
-      face.rotation.x = Math.PI
-      group.add(face)
     }
 
     if (layout.neckDiameter != null && layout.neckLength != null) {
@@ -271,7 +262,7 @@ export function ToolPreview({ toolType, params }: Props) {
     const size = box.getSize(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.y, size.z, 0.01)
     const tipWorld = new THREE.Vector3(0, 0, 0).applyMatrix4(group.matrixWorld)
-    const look = new THREE.Vector3(0, 0, 0).lerp(tipWorld, 0.08)
+    const look = new THREE.Vector3(0, 0, 0).lerp(tipWorld, toolType === 'endmill' ? 0.2 : 0.08)
     const fov = (camera.fov * Math.PI) / 180
     const dist = (maxDim / 2 / Math.tan(fov / 2)) * 1.14
     camera.position.set(dist * 0.86, dist * 0.22, dist * 0.5)
