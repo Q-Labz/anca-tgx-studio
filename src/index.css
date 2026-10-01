@@ -880,7 +880,8 @@ a.btn {
 }
 
 .field-help:hover .field-help-pop,
-.field-help:focus-within .field-help-pop {
+.field-help:focus-within .field-help-pop,
+.field-help.pinned .field-help-pop {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;

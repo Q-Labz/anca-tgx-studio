@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { DiagramKind, FieldHelpEntry } from '../lib/drillGuide'
 
 function HelpDiagram({ kind }: { kind: DiagramKind }) {
@@ -84,9 +85,20 @@ function HelpDiagram({ kind }: { kind: DiagramKind }) {
 }
 
 export function FieldHelp({ help }: { help: FieldHelpEntry }) {
+  const [pinned, setPinned] = useState(false)
   return (
-    <span className="field-help">
-      <button type="button" className="help-btn" aria-label={help.text}>
+    <span className={`field-help${pinned ? ' pinned' : ''}`}>
+      <button
+        type="button"
+        className="help-btn"
+        aria-expanded={pinned}
+        aria-label={help.text}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          setPinned((open) => !open)
+        }}
+      >
         ?
       </button>
       <span className="field-help-pop" role="tooltip">
