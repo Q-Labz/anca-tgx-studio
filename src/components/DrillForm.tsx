@@ -230,9 +230,14 @@ export function DrillFields({
         className="field"
         key={key}
         onMouseEnter={() => onHighlight(help.part)}
-        onMouseLeave={() => onHighlight(null)}
+        onMouseLeave={(event) => {
+          if (event.currentTarget.querySelector('.field-help.pinned')) return
+          if (event.currentTarget.contains(document.activeElement)) return
+          onHighlight(null)
+        }}
         onFocusCapture={() => onHighlight(help.part)}
         onBlurCapture={(event) => {
+          if (event.currentTarget.querySelector('.field-help.pinned')) return
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onHighlight(null)
         }}
       >
