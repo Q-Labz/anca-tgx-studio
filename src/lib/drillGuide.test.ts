@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DRILL_TYPE_IDS, type DrillTypeId } from './types'
-import { getDrillType, type DrillFieldKey } from './drillTypes'
+import { createDrill, getDrillType, type DrillFieldKey } from './drillTypes'
 import { validateDrill } from './validation'
 import {
   adviseDrill,
@@ -147,6 +147,7 @@ describe('adviseDrill', () => {
     const warnings = adviseDrill(long, null)
     expect(warnings.some((warning) => warning.id === 'deep-twist')).toBe(true)
     expect(adviseDrill(deep, 'aluminum')).toEqual([])
+    expect(adviseDrill(createDrill('jobber'), null).some((warning) => warning.id === 'deep-twist')).toBe(false)
   })
 
   it('suggests coolant-through for a deeper steel hole on a jobber', () => {

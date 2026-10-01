@@ -946,18 +946,25 @@ export function adviseDrill(drill: DrillParams, workpiece: WorkpieceMaterial | n
         'Gun drills are for deep holes and need a guide bushing plus coolant. A jobber or stub is the usual tool for a short hole.',
       adopt: 'jobber',
     })
-  } else if (ratio >= 15 && typeId !== 'gun') {
+  } else if (ratio >= 18 && typeId !== 'gun') {
     notes.push({
       id: 'very-deep',
       message:
-        'This flute is about 15 diameters long or more. A gun drill, with a bushing and coolant, is the usual tool past a twist drill.',
+        'This flute is about 18 diameters long or more. A gun drill, with a bushing and coolant, is the usual tool past a twist drill.',
       adopt: 'gun',
     })
-  } else if (ratio >= 8 && SHORT_FLUTE_TYPES.has(typeId)) {
+  } else if (typeId === 'stub' && ratio >= 6) {
+    notes.push({
+      id: 'deep-stub',
+      message:
+        'This flute is long for a stub drill. A stub is meant to stay short and stiff. A jobber or parabolic flute fits a deeper hole.',
+      adopt: 'jobber',
+    })
+  } else if (ratio >= 12 && SHORT_FLUTE_TYPES.has(typeId)) {
     notes.push({
       id: 'deep-twist',
       message:
-        'This flute is long for a standard twist drill. A parabolic flute clears chips better, and a gun drill is the next step if it gets deeper.',
+        'This flute is longer than a normal jobber. A parabolic flute clears chips better, and a gun drill is the next step if it gets deeper.',
       adopt: 'parabolic',
     })
   } else if (

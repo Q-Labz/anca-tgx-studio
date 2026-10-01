@@ -20,8 +20,11 @@ function applyPreviewHighlight(group: THREE.Group, part: PreviewPart | null) {
       let highlightMat = obj.userData.highlightMaterial as THREE.MeshStandardMaterial | undefined
       if (!highlightMat && base instanceof THREE.MeshStandardMaterial) {
         highlightMat = base.clone()
-        highlightMat.emissive = new THREE.Color(0x3dffe8)
-        highlightMat.emissiveIntensity = 0.7
+        highlightMat.color = new THREE.Color(0x14786f)
+        highlightMat.emissive = new THREE.Color(0x7dffe8)
+        highlightMat.emissiveIntensity = 1.4
+        highlightMat.metalness = 0.15
+        highlightMat.roughness = 0.35
         obj.userData.highlightMaterial = highlightMat
       }
       if (highlightMat) obj.material = highlightMat
