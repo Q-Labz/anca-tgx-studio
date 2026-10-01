@@ -1,6 +1,53 @@
 export type ToolType = 'endmill' | 'drill'
 export type ToolMaterial = 'carbide' | 'HSS'
 
+export const DRILL_TYPE_IDS = [
+  'jobber',
+  'stub',
+  'taper',
+  'spot90',
+  'spot120',
+  'center',
+  'step',
+  'subland',
+  'coolant',
+  'parabolic',
+  'gun',
+  'straight',
+  'micro',
+  'countersink',
+  'flat-bottom',
+  'core',
+  'double-margin',
+] as const
+
+export type DrillTypeId = (typeof DRILL_TYPE_IDS)[number]
+
+export const WEB_THINNING_STYLES = ['none', 'S', 'X', 'split', 'notched'] as const
+export type WebThinningStyle = (typeof WEB_THINNING_STYLES)[number]
+
+export const CENTER_DRILL_SIZES = [
+  '#00',
+  '#0',
+  '#1',
+  '#2',
+  '#3',
+  '#4',
+  '#5',
+  '#6',
+  '#7',
+  '#8',
+] as const
+export type CenterDrillSize = (typeof CENTER_DRILL_SIZES)[number]
+
+export const GUN_FLUTE_STYLES = ['single', 'v'] as const
+export type GunFluteStyle = (typeof GUN_FLUTE_STYLES)[number]
+
+export interface DrillStep {
+  diameter: number
+  length: number
+}
+
 export interface EndmillParams {
   name: string
   diameter: number
@@ -19,16 +66,59 @@ export interface EndmillParams {
 
 export interface DrillParams {
   name: string
+  /** Library family. Designs saved before the drill library are treated as jobber. */
+  drillType: DrillTypeId
   diameter: number
   pointAngle: number
   fluteCount: number
+  helixAngle: number
   overallLength: number
   fluteLength: number
   shankDiameter: number
   shankLength: number
+  /** Core thickness at the point, mm */
+  webThickness: number
+  webThinning: WebThinningStyle
   webThinningNote: string
+  /** Land margin width, mm */
+  marginWidth: number
+  /** How far the body sits under the cutting diameter, mm on diameter */
+  bodyClearance: number
+  /** Primary lip relief, degrees */
+  lipReliefAngle: number
+  /** Back taper, mm per 100 mm of flute */
+  backTaper: number
+  coolantHoles: number
+  coolantHoleDiameter: number
+  /** Step drill diameters from the tip rearward. Empty for other families. */
+  steps: DrillStep[]
+  /** Larger rear land on a subland drill, mm */
+  sublandDiameter: number
+  sublandLength: number
+  centerSize: CenterDrillSize
+  countersinkAngle: number
+  countersinkDiameter: number
+  /** Pilot length on a combined drill and countersink, mm */
+  pilotLength: number
+  /** Included chamfer angle on a drill/countersink combination */
+  chamferAngle: number
+  chamferDiameter: number
+  gunFluteStyle: GunFluteStyle
   coating: string
   material: ToolMaterial
+}
+
+export interface DesignParameterLine {
+  label: string
+  value: string
+}
+
+/** Parameter snapshot copied onto a traveler when a design is linked. */
+export interface DesignSnapshot {
+  toolType: ToolType
+  drillType: DrillTypeId | null
+  drillTypeLabel: string | null
+  lines: DesignParameterLine[]
 }
 
 export type ToolParams = EndmillParams | DrillParams
@@ -75,6 +165,8 @@ export interface JobTraveler {
   notes: string
   /** Optional ToolRoom .TOM filename reference (metadata only — not a binary) */
   toolroomTomFilename: string
+  /** Parameters copied from the linked design. Null on manual travelers. */
+  designSnapshot: DesignSnapshot | null
   createdAt: string
   updatedAt: string
 }
@@ -92,20 +184,6 @@ export const DEFAULT_ENDMILL: EndmillParams = {
   neckDiameter: null,
   neckLength: null,
   coating: 'AlTiN',
-  material: 'carbide',
-}
-
-export const DEFAULT_DRILL: DrillParams = {
-  name: 'DR-8-118',
-  diameter: 8,
-  pointAngle: 118,
-  fluteCount: 2,
-  overallLength: 80,
-  fluteLength: 45,
-  shankDiameter: 8,
-  shankLength: 30,
-  webThinningNote: '',
-  coating: 'TiN',
   material: 'carbide',
 }
 
@@ -153,6 +231,7 @@ export function makeEmptyTraveler(partial?: Partial<JobTraveler>): JobTraveler {
     operator: '',
     notes: '',
     toolroomTomFilename: '',
+    designSnapshot: null,
     createdAt: now,
     updatedAt: now,
     ...partial,

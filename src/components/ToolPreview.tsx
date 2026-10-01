@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
+import { drillCaption, normalizeDrill } from '../lib/drillTypes'
+import { buildDrillMesh } from '../preview/drillMesh'
 import type { DrillParams, EndmillParams, ToolType } from '../lib/types'
 
 interface Props {
@@ -63,6 +65,16 @@ export function ToolPreview({ toolType, params }: Props) {
       metalness: 0.5,
       roughness: 0.35,
     })
+    const matHole = new THREE.MeshStandardMaterial({
+      color: 0x101418,
+      metalness: 0.2,
+      roughness: 0.85,
+    })
+    const matMargin = new THREE.MeshStandardMaterial({
+      color: 0xd7ece8,
+      metalness: 0.75,
+      roughness: 0.28,
+    })
 
     const scale = 0.12
     const dia = Math.max(params.diameter, 0.5) * scale
@@ -71,23 +83,18 @@ export function ToolPreview({ toolType, params }: Props) {
     const fluteLen = Math.min(params.fluteLength, params.overallLength - 0.5) * scale
     const shankLen = Math.min(params.shankLength, params.overallLength) * scale
 
-    // Align tool along +Z (tip at +Z, shank toward -Z), then rotate for view
+    // Tip at low Z, shank toward +Z, then the group is framed for the camera.
     let z = 0
 
-    // Tip / cutting end
     if (toolType === 'drill') {
-      const drill = params as DrillParams
-      const pointAngle = ((drill.pointAngle || 118) * Math.PI) / 180
-      const half = pointAngle / 2
-      const coneH = Math.max(dia * 0.35, (dia / 2) / Math.tan(half))
-      const tip = new THREE.Mesh(
-        new THREE.ConeGeometry(dia / 2, coneH, 24),
-        matTip,
-      )
-      tip.rotation.x = Math.PI / 2
-      tip.position.z = z + coneH / 2
-      group.add(tip)
-      z += coneH
+      buildDrillMesh(group, normalizeDrill(params), scale, {
+        shank: matShank,
+        cutting: matCutting,
+        flute: matFlute,
+        tip: matTip,
+        hole: matHole,
+        margin: matMargin,
+      })
     } else {
       const em = params as EndmillParams
       if (em.cornerRadius > 0) {
@@ -119,7 +126,7 @@ export function ToolPreview({ toolType, params }: Props) {
       }
     }
 
-    // Fluted section — cylinder with helical groove approximations (thin cylinders offset)
+    if (toolType === 'endmill') {
     const fluteBody = new THREE.Mesh(
       new THREE.CylinderGeometry(dia / 2, dia / 2, Math.max(fluteLen, 0.5), 48),
       matCutting,
@@ -175,6 +182,7 @@ export function ToolPreview({ toolType, params }: Props) {
     shank.rotation.x = Math.PI / 2
     shank.position.z = z + shankH / 2
     group.add(shank)
+    }
 
     // Center group
     const box = new THREE.Box3().setFromObject(group)
@@ -223,6 +231,8 @@ export function ToolPreview({ toolType, params }: Props) {
       matCutting.dispose()
       matFlute.dispose()
       matTip.dispose()
+      matHole.dispose()
+      matMargin.dispose()
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
           obj.geometry.dispose()
@@ -238,7 +248,9 @@ export function ToolPreview({ toolType, params }: Props) {
   return (
     <div className="preview-panel">
       <div className="preview-header">
-        <span className="preview-title">Live 3D preview</span>
+        <span className="preview-title">
+          {toolType === 'drill' ? drillCaption(normalizeDrill(params)) : 'Live 3D preview'}
+        </span>
         <span className="preview-badge">Simplified geometry — not grind sim</span>
       </div>
       <div ref={mountRef} className="preview-canvas" />

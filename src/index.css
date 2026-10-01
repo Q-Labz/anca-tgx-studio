@@ -281,6 +281,70 @@ button {
   gap: 0.35rem;
 }
 
+.chip-row.wrap {
+  flex-wrap: wrap;
+}
+
+.drill-group {
+  margin-top: 0.6rem;
+}
+
+.drill-group-label {
+  margin-bottom: 0.28rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.steps-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.step-row {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr auto;
+  gap: 0.35rem;
+  align-items: end;
+}
+
+.step-index {
+  font-family: var(--mono);
+  color: var(--petrol-bright);
+  padding-bottom: 0.4rem;
+}
+
+.param-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem 0.75rem;
+  margin: 0.75rem 0 0;
+}
+
+.param-list div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.param-list dt {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.param-list dd {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
 .chip {
   border: 1px solid var(--border);
   background: var(--bg-elev);
@@ -438,11 +502,11 @@ button {
 }
 
 .preview-title {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
   color: var(--petrol-bright);
   font-weight: 650;
+  line-height: 1.35;
 }
 
 .preview-badge {

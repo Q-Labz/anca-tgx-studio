@@ -32,8 +32,9 @@ npm run preview
 
 ### Designer
 
-- Tool types: **solid endmill**, **drill**
-- Parameter forms with validation
+- Tool types: **solid endmill**, **drill library**
+- Drill families: jobber, stub / screw-machine, taper / long series, spot (90° and 120°), center drill (#00–#8), step, subland, coolant-through, parabolic deep-hole, gun, straight flute, micro, drill/countersink, flat-bottom, core, and double-margin
+- Parameter forms with validation (impossible geometry is rejected with a reason)
 - Live Three.js preview (approximate geometry — not grind simulation)
 - Save / load / delete designs in localStorage
 - Export: **JSON**, **CSV**, printable **setup sheet**

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { JobTraveler, SavedDesign, WheelRow } from '../lib/types'
+import { snapshotFromDesign } from '../lib/designSnapshot'
+import type { DesignSnapshot, JobTraveler, SavedDesign, WheelRow } from '../lib/types'
 import { makeEmptyTraveler, uid } from '../lib/types'
 import {
   deleteTraveler,
@@ -35,6 +36,7 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
         blankDiameter: p.diameter,
         blankLength: p.overallLength + 5,
         blankMaterial: p.material === 'HSS' ? 'HSS rod' : 'Carbide rod',
+        designSnapshot: snapshotFromDesign(d),
       }),
     )
     onConsumedSeed?.()
@@ -62,9 +64,11 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
   }
 
   const handleLoad = (t: JobTraveler) => {
+    const design = t.designId ? getDesign(t.designId) : undefined
     setTraveler({
       ...t,
       toolroomTomFilename: t.toolroomTomFilename ?? '',
+      designSnapshot: t.designSnapshot ?? (design ? snapshotFromDesign(design) : null),
     })
     flash(`Loaded job ${t.jobNumber || t.id}`)
   }
@@ -83,7 +87,7 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
 
   const linkDesign = (id: string) => {
     if (!id) {
-      patch({ designId: null, designName: '', toolType: null })
+      patch({ designId: null, designName: '', toolType: null, designSnapshot: null })
       return
     }
     const d = getDesign(id)
@@ -96,6 +100,7 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
       blankDiameter: p.diameter,
       blankLength: p.overallLength + 5,
       blankMaterial: p.material === 'HSS' ? 'HSS rod' : 'Carbide rod',
+      designSnapshot: snapshotFromDesign(d),
     })
   }
 
@@ -106,6 +111,10 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
       ),
     })
   }
+
+  const linked = traveler.designId ? getDesign(traveler.designId) : undefined
+  const snapshot: DesignSnapshot | null =
+    traveler.designSnapshot ?? (linked ? snapshotFromDesign(linked) : null)
 
   const field = (label: string, control: ReactNode) => (
     <label className="field">
@@ -377,8 +386,22 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
           <h2>TGX operation checklist</h2>
           <p className="muted">
             Design: <strong>{traveler.designName || '—'}</strong>
-            {traveler.toolType && <span className="tag">{traveler.toolType}</span>}
+            {snapshot?.drillTypeLabel ? (
+              <span className="tag">{snapshot.drillTypeLabel}</span>
+            ) : (
+              traveler.toolType && <span className="tag">{traveler.toolType}</span>
+            )}
           </p>
+          {snapshot && snapshot.lines.length > 0 && (
+            <dl className="param-list">
+              {snapshot.lines.map((line) => (
+                <div key={line.label}>
+                  <dt>{line.label}</dt>
+                  <dd>{line.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
           <ul className="ops-list">
             {traveler.ops.map((op, idx) => (
               <li key={op.id} className={op.done ? 'done' : ''}>
@@ -428,6 +451,7 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
       {printMode && (
         <TravelerPrint
           traveler={traveler}
+          snapshot={snapshot}
           onClose={() => setPrintMode(false)}
         />
       )}
@@ -437,9 +461,11 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
 
 function TravelerPrint({
   traveler,
+  snapshot,
   onClose,
 }: {
   traveler: JobTraveler
+  snapshot: DesignSnapshot | null
   onClose: () => void
 }) {
   return (
@@ -474,7 +500,12 @@ function TravelerPrint({
             <tr>
               <th>Design</th>
               <td>
-                {traveler.designName || '—'} {traveler.toolType ? `(${traveler.toolType})` : ''}
+                {traveler.designName || '—'}{' '}
+                {snapshot?.drillTypeLabel
+                  ? `(${snapshot.drillTypeLabel})`
+                  : traveler.toolType
+                    ? `(${traveler.toolType})`
+                    : ''}
               </td>
               <th>Machine</th>
               <td>{traveler.machine}</td>
@@ -497,6 +528,21 @@ function TravelerPrint({
             </tr>
           </tbody>
         </table>
+        {snapshot && snapshot.lines.length > 0 && (
+          <>
+            <h2>Tool parameters</h2>
+            <table>
+              <tbody>
+                {snapshot.lines.map((line) => (
+                  <tr key={line.label}>
+                    <th>{line.label}</th>
+                    <td colSpan={3}>{line.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
         <h2>Wheel pack</h2>
         <table>
           <thead>
