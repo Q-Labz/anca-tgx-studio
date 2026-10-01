@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 import {
   DRILL_GROUPS,
   applyCenterDrillSize,
@@ -8,6 +8,15 @@ import {
   withSteps,
   type DrillFieldKey,
 } from '../lib/drillTypes'
+import {
+  beginnerFieldKeys,
+  drillCard,
+  fieldHelp,
+  starterTemplates,
+  type ExperienceMode,
+  type PreviewPart,
+  type StarterTemplate,
+} from '../lib/drillGuide'
 import type {
   CenterDrillSize,
   DrillParams,
@@ -18,11 +27,25 @@ import type {
 } from '../lib/types'
 import { CENTER_DRILL_SIZES } from '../lib/types'
 import type { FieldErrors } from '../lib/validation'
+import { FieldHelp } from './FieldHelp'
 
 interface Props {
   drill: DrillParams
   setDrill: (drill: DrillParams) => void
   errors: FieldErrors
+  mode: ExperienceMode
+  showAdvanced: boolean
+  onShowAdvanced: () => void
+  onHighlight: (part: PreviewPart | null) => void
+}
+
+interface LibraryProps {
+  drill: DrillParams
+  setDrill: (drill: DrillParams) => void
+  mode: ExperienceMode
+  onMode: (mode: ExperienceMode) => void
+  onTemplate: (template: StarterTemplate) => void
+  onHelp: () => void
 }
 
 const WEB_OPTIONS: { value: WebThinningStyle; label: string }[] = [
@@ -33,39 +56,150 @@ const WEB_OPTIONS: { value: WebThinningStyle; label: string }[] = [
   { value: 'notched', label: 'Notched' },
 ]
 
-export function DrillLibrary({ drill, setDrill }: Omit<Props, 'errors'>) {
+export function DrillLibrary({ drill, setDrill, mode, onMode, onTemplate, onHelp }: LibraryProps) {
   const selected = getDrillType(drill.drillType)
+  const selectedCard = drillCard(drill.drillType)
+  const templates = useMemo(() => starterTemplates(), [])
   return (
     <div className="panel">
-      <h2>Drill library</h2>
-      <p className="muted tiny">Pick a family. Each one loads shop-typical defaults you can edit.</p>
-      {DRILL_GROUPS.map((group) => (
-        <div key={group} className="drill-group">
-          <div className="drill-group-label">{group}</div>
-          <div className="chip-row wrap">
-            {listDrillTypes()
-              .filter((type) => type.group === group)
-              .map((type) => (
-                <button
-                  key={type.id}
-                  type="button"
-                  className={`chip ${drill.drillType === type.id ? 'active' : ''}`}
-                  aria-pressed={drill.drillType === type.id}
-                  title={type.summary}
-                  onClick={() => setDrill(createDrill(type.id))}
-                >
-                  {type.shortLabel}
-                </button>
-              ))}
-          </div>
+      <div className="panel-head">
+        <h2>Drill library</h2>
+        <div className="seg" role="group" aria-label="Experience">
+          <button type="button" className={mode === 'beginner' ? 'active' : ''} onClick={() => onMode('beginner')}>
+            Beginner
+          </button>
+          <button type="button" className={mode === 'expert' ? 'active' : ''} onClick={() => onMode('expert')}>
+            Expert
+          </button>
         </div>
-      ))}
-      <p className="hint muted">{selected.summary}</p>
+      </div>
+      <button type="button" className="btn accent wizard-launch" onClick={onHelp}>
+        Help me choose
+      </button>
+      <p className="muted tiny">Starter jobs load a full setup you can edit.</p>
+      {mode === 'expert' ? (
+        <div className="chip-row wrap">
+          {templates.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              className="chip"
+              title={template.blurb}
+              onClick={() => onTemplate(template)}
+            >
+              {template.title}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="template-list">
+          {templates.map((template) => (
+            <button key={template.id} type="button" className="template-card" onClick={() => onTemplate(template)}>
+              <strong>{template.title}</strong>
+              <span>{template.blurb}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {mode === 'beginner' && (
+        <article className="type-card active">
+          <strong>{selected.shortLabel}</strong>
+          <p>{selectedCard.forWhat}</p>
+          <p>
+            <span className="card-k">Use when</span> {selectedCard.useWhen}
+          </p>
+          <p>
+            <span className="card-k">Skip when</span> {selectedCard.avoidWhen}
+          </p>
+        </article>
+      )}
+      {mode === 'expert' ? (
+        <>
+          {DRILL_GROUPS.map((group) => (
+            <div key={group} className="drill-group">
+              <div className="drill-group-label">{group}</div>
+              <div className="chip-row wrap">
+                {listDrillTypes()
+                  .filter((type) => type.group === group)
+                  .map((type) => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      className={`chip ${drill.drillType === type.id ? 'active' : ''}`}
+                      aria-pressed={drill.drillType === type.id}
+                      title={type.summary}
+                      onClick={() => setDrill(createDrill(type.id))}
+                    >
+                      {type.shortLabel}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          ))}
+          <article className="type-card active">
+            <strong>{selected.shortLabel}</strong>
+            <p>{selectedCard.forWhat}</p>
+            <p>
+              <span className="card-k">Use when</span> {selectedCard.useWhen}
+            </p>
+            <p>
+              <span className="card-k">Skip when</span> {selectedCard.avoidWhen}
+            </p>
+          </article>
+        </>
+      ) : null}
     </div>
   )
 }
 
-export function DrillFields({ drill, setDrill, errors }: Props) {
+export function DrillTypeCards({ drill, setDrill }: { drill: DrillParams; setDrill: (drill: DrillParams) => void }) {
+  return (
+    <div className="panel">
+      <h2>Choose a drill type</h2>
+      <p className="muted tiny">Each card says what the drill is for. Picking one loads its usual defaults.</p>
+      {DRILL_GROUPS.map((group) => (
+        <div key={group} className="drill-group">
+          <div className="drill-group-label">{group}</div>
+          <div className="card-grid">
+            {listDrillTypes()
+              .filter((type) => type.group === group)
+              .map((type) => {
+                const card = drillCard(type.id)
+                return (
+                  <button
+                    key={type.id}
+                    type="button"
+                    className={`type-card ${drill.drillType === type.id ? 'active' : ''}`}
+                    aria-pressed={drill.drillType === type.id}
+                    onClick={() => setDrill(createDrill(type.id))}
+                  >
+                    <strong>{type.shortLabel}</strong>
+                    <p>{card.forWhat}</p>
+                    <p>
+                      <span className="card-k">Use when</span> {card.useWhen}
+                    </p>
+                    <p>
+                      <span className="card-k">Skip when</span> {card.avoidWhen}
+                    </p>
+                  </button>
+                )
+              })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function DrillFields({
+  drill,
+  setDrill,
+  errors,
+  mode,
+  showAdvanced,
+  onShowAdvanced,
+  onHighlight,
+}: Props) {
   const def = getDrillType(drill.drillType)
   const shown = new Set<string>(def.fields)
   if (def.fields.includes('steps')) {
@@ -89,20 +223,47 @@ export function DrillFields({ drill, setDrill, errors }: Props) {
     />
   )
 
-  const field = (key: string, label: string, control: ReactNode, hint?: string) => (
-    <label className="field" key={key}>
-      <span className="field-label">{label}</span>
-      {control}
-      {hint && <span className="muted tiny">{hint}</span>}
-      {errors[key] && <span className="field-error">{errors[key]}</span>}
-    </label>
-  )
+  const field = (key: DrillFieldKey, label: string, control: ReactNode, hint?: string) => {
+    const help = fieldHelp(key)
+    return (
+      <label
+        className="field"
+        key={key}
+        onMouseEnter={() => onHighlight(help.part)}
+        onMouseLeave={() => onHighlight(null)}
+        onFocusCapture={() => onHighlight(help.part)}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onHighlight(null)
+        }}
+      >
+        <span className="field-label">
+          {label}
+          <FieldHelp help={help} />
+        </span>
+        {control}
+        {hint && <span className="muted tiny">{hint}</span>}
+        {errors[key] && <span className="field-error">{errors[key]}</span>}
+      </label>
+    )
+  }
 
   const updateSteps = (steps: DrillStep[]) => setDrill(withSteps(drill, steps))
 
   const renderSteps = () => (
-    <div className="steps-editor" key="steps">
-      <span className="field-label">Steps — diameter and length (tip is step 1)</span>
+    <div
+      className="steps-editor"
+      key="steps"
+      onMouseEnter={() => onHighlight('step')}
+      onMouseLeave={() => onHighlight(null)}
+      onFocusCapture={() => onHighlight('step')}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onHighlight(null)
+      }}
+    >
+      <span className="field-label">
+        Steps — diameter and length (tip is step 1)
+        <FieldHelp help={fieldHelp('steps')} />
+      </span>
       {drill.steps.map((step, index) => (
         <div className="step-row" key={index}>
           <span className="step-index">{index + 1}</span>
@@ -433,9 +594,38 @@ export function DrillFields({ drill, setDrill, errors }: Props) {
     }
   }
 
+  const beginner = beginnerFieldKeys(drill.drillType)
+  const beginnerSet = new Set<string>(beginner)
+  const advanced = def.fields.filter((key) => !beginnerSet.has(key))
+  const ordered: DrillFieldKey[] =
+    mode === 'expert'
+      ? [...def.fields]
+      : showAdvanced
+        ? [...beginner.filter((key) => def.fields.includes(key)), ...advanced]
+        : beginner.filter((key) => def.fields.includes(key))
+
+  useEffect(() => {
+    if (mode !== 'beginner' || showAdvanced) return
+    const keys = new Set<string>(beginnerFieldKeys(drill.drillType))
+    const hiddenError = Object.keys(errors).some((key) => {
+      if (keys.has(key)) return false
+      if (key.startsWith('step-') && keys.has('steps')) return false
+      return true
+    })
+    if (hiddenError) onShowAdvanced()
+  }, [mode, showAdvanced, errors, drill.drillType, onShowAdvanced])
+
   return (
     <>
-      {def.fields.map((key) => renderField(key))}
+      {ordered.map((key) => renderField(key))}
+      {mode === 'beginner' && advanced.length > 0 && !showAdvanced && (
+        <button type="button" className="btn" onClick={onShowAdvanced}>
+          Show advanced
+        </button>
+      )}
+      {mode === 'beginner' && showAdvanced && (
+        <p className="muted tiny">Advanced fields are open. Web, margin, relief, and back taper live here.</p>
+      )}
       {orphans.length > 0 && (
         <div className="field-error" key="orphans">
           {orphans.map(([key, message]) => (

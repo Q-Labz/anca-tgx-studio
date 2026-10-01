@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import type {
   DrillParams,
   EndmillParams,
@@ -8,11 +8,23 @@ import type {
 } from '../lib/types'
 import { DEFAULT_ENDMILL, uid } from '../lib/types'
 import { createDrill, getDrillType, normalizeDrill } from '../lib/drillTypes'
+import {
+  adoptType,
+  adviseDrill,
+  readExperienceMode,
+  workpieceLabel,
+  writeExperienceMode,
+  type ExperienceMode,
+  type PreviewPart,
+  type StarterTemplate,
+  type WorkpieceMaterial,
+} from '../lib/drillGuide'
 import { snapshotFromDesign } from '../lib/designSnapshot'
 import { deleteDesign, listDesigns, saveDesign } from '../lib/storage'
 import { validateTool } from '../lib/validation'
 import { DISCLAIMER, exportDesignCsv, exportDesignJson } from '../lib/export'
-import { DrillFields, DrillLibrary } from './DrillForm'
+import { DrillFields, DrillLibrary, DrillTypeCards } from './DrillForm'
+import { DrillWizard } from './DrillWizard'
 import { ToolPreview } from './ToolPreview'
 
 interface Props {
@@ -41,10 +53,62 @@ export function Designer({
   const [designs, setDesigns] = useState<SavedDesign[]>(() => listDesigns())
   const [message, setMessage] = useState<string | null>(null)
   const [showSetupSheet, setShowSetupSheet] = useState(false)
+  const [mode, setMode] = useState<ExperienceMode>(() => readExperienceMode())
+  const [workpiece, setWorkpiece] = useState<WorkpieceMaterial | null>(null)
+  const [highlight, setHighlight] = useState<PreviewPart | null>(null)
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const stashRef = useRef<{ drill: DrillParams; workpiece: WorkpieceMaterial | null } | null>(null)
+  const openAdvanced = useCallback(() => setShowAdvanced(true), [])
 
   const params = toolType === 'endmill' ? endmill : drill
   const errors = useMemo(() => validateTool(toolType, params), [toolType, params])
   const valid = Object.keys(errors).length === 0
+  const advisories = useMemo(
+    () => (toolType === 'drill' ? adviseDrill(drill, workpiece) : []),
+    [toolType, drill, workpiece],
+  )
+
+  const changeMode = (next: ExperienceMode) => {
+    setMode(next)
+    writeExperienceMode(next)
+    if (next === 'expert') setShowAdvanced(false)
+  }
+
+  const openWizard = () => {
+    stashRef.current = { drill, workpiece }
+    setWizardOpen(true)
+  }
+
+  const cancelWizard = () => {
+    const stash = stashRef.current
+    if (stash) {
+      setDrill(stash.drill)
+      setWorkpiece(stash.workpiece)
+    }
+    setWizardOpen(false)
+  }
+
+  const acceptWizard = (next: DrillParams, material: WorkpieceMaterial) => {
+    setDrill(next)
+    setWorkpiece(material)
+    setDesignId(null)
+    setWizardOpen(false)
+    setShowAdvanced(false)
+    flash(`Using ${getDrillType(next.drillType).shortLabel}`)
+  }
+
+  const applyTemplate = (template: StarterTemplate) => {
+    setDrill({
+      ...template.drill,
+      steps: template.drill.steps.map((step) => ({ ...step })),
+    })
+    setWorkpiece(template.workpiece)
+    setDesignId(null)
+    setShowAdvanced(false)
+    setWizardOpen(false)
+    flash(`Loaded “${template.title}”`)
+  }
 
   const refresh = () => setDesigns(listDesigns())
 
@@ -81,6 +145,8 @@ export function Designer({
     setDesignId(d.id)
     if (d.toolType === 'endmill') setEndmill(d.params as EndmillParams)
     else setDrill(normalizeDrill(d.params))
+    setWorkpiece(null)
+    setWizardOpen(false)
     flash(`Loaded “${(d.params as { name: string }).name}”`)
   }
 
@@ -93,6 +159,8 @@ export function Designer({
 
   const handleNew = () => {
     setDesignId(null)
+    setWorkpiece(null)
+    setWizardOpen(false)
     if (toolType === 'endmill') setEndmill({ ...DEFAULT_ENDMILL })
     else setDrill(createDrill(drill.drillType))
     flash('New design')
@@ -176,13 +244,49 @@ export function Designer({
           <p className="hint muted">Reamer stub reserved for later.</p>
         </div>
 
-        {toolType === 'drill' && <DrillLibrary drill={drill} setDrill={setDrill} />}
+        {toolType === 'drill' && wizardOpen && (
+          <DrillWizard onCancel={cancelWizard} onPreview={(next, material) => {
+            setDrill(next)
+            setWorkpiece(material)
+          }} onAccept={acceptWizard} />
+        )}
 
+        {toolType === 'drill' && !wizardOpen && (
+          <DrillLibrary
+            drill={drill}
+            setDrill={(next) => {
+              setDrill(next)
+              setShowAdvanced(false)
+            }}
+            mode={mode}
+            onMode={changeMode}
+            onTemplate={applyTemplate}
+            onHelp={openWizard}
+          />
+        )}
+
+        {!wizardOpen && (
         <div className="panel form-panel">
           <h2>Parameters</h2>
+          {toolType === 'drill' && workpiece && (
+            <p className="hint">
+              Workpiece: {workpieceLabel(workpiece)}{' '}
+              <button type="button" className="btn ghost sm" onClick={() => setWorkpiece(null)}>
+                Clear
+              </button>
+            </p>
+          )}
           <div className="form-grid">
             {toolType === 'drill' ? (
-              <DrillFields drill={drill} setDrill={setDrill} errors={errors} />
+              <DrillFields
+                drill={drill}
+                setDrill={setDrill}
+                errors={errors}
+                mode={mode}
+                showAdvanced={showAdvanced}
+                onShowAdvanced={openAdvanced}
+                onHighlight={setHighlight}
+              />
             ) : (
               <>
                 {field(
@@ -279,6 +383,35 @@ export function Designer({
             )}
           </div>
 
+          {toolType === 'drill' && advisories.length > 0 && (
+            <div className="advisory-list">
+              <h3>Suggestions</h3>
+              <p className="muted tiny">You can still save. These are shop cautions, separate from the red errors.</p>
+              <ul>
+                {advisories.map((item) => {
+                  const adopted = item.adopt ? adoptType(drill, item.adopt) : null
+                  return (
+                    <li key={item.id}>
+                      <p>{item.message}</p>
+                      {adopted && item.adopt && (
+                        <button
+                          type="button"
+                          className="btn sm"
+                          onClick={() => {
+                            setDrill(adopted)
+                            setDesignId(null)
+                          }}
+                        >
+                          Use {getDrillType(item.adopt).shortLabel}
+                        </button>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+
           <div className="btn-row wrap">
             <button type="button" className="btn primary" onClick={handleSave}>
               Save design
@@ -323,6 +456,17 @@ export function Designer({
           <p className="disclaimer">{DISCLAIMER}</p>
           {message && <p className="toast">{message}</p>}
         </div>
+        )}
+
+        {toolType === 'drill' && !wizardOpen && mode === 'beginner' && (
+          <DrillTypeCards
+            drill={drill}
+            setDrill={(next) => {
+              setDrill(next)
+              setShowAdvanced(false)
+            }}
+          />
+        )}
 
         <div className="panel">
           <h2>Saved designs</h2>
@@ -363,7 +507,7 @@ export function Designer({
       </aside>
 
       <main className="main-stage">
-        <ToolPreview toolType={toolType} params={params} />
+        <ToolPreview toolType={toolType} params={params} highlight={toolType === 'drill' ? highlight : null} />
       </main>
 
       {showSetupSheet && (

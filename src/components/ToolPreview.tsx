@@ -1,12 +1,34 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { drillCaption, normalizeDrill } from '../lib/drillTypes'
+import { previewPartLabel, type PreviewPart } from '../lib/drillGuide'
 import { buildDrillMesh } from '../preview/drillMesh'
 import type { DrillParams, EndmillParams, ToolType } from '../lib/types'
 
 interface Props {
   toolType: ToolType
   params: EndmillParams | DrillParams
+  highlight?: PreviewPart | null
+}
+
+function applyPreviewHighlight(group: THREE.Group, part: PreviewPart | null) {
+  group.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return
+    const base = obj.userData.baseMaterial as THREE.Material | undefined
+    if (!base) return
+    if (part && obj.userData.part === part) {
+      let highlightMat = obj.userData.highlightMaterial as THREE.MeshStandardMaterial | undefined
+      if (!highlightMat && base instanceof THREE.MeshStandardMaterial) {
+        highlightMat = base.clone()
+        highlightMat.emissive = new THREE.Color(0x3dffe8)
+        highlightMat.emissiveIntensity = 0.7
+        obj.userData.highlightMaterial = highlightMat
+      }
+      if (highlightMat) obj.material = highlightMat
+    } else {
+      obj.material = base
+    }
+  })
 }
 
 const STEEL = 0x8a9ba8
@@ -14,8 +36,10 @@ const CARBIDE = 0xc5ccd3
 const FLUTE = 0x6b7a86
 const ACCENT = 0x2a9d8f
 
-export function ToolPreview({ toolType, params }: Props) {
+export function ToolPreview({ toolType, params, highlight = null }: Props) {
   const mountRef = useRef<HTMLDivElement>(null)
+  const groupRef = useRef<THREE.Group | null>(null)
+  const highlightRef = useRef(highlight)
 
   useEffect(() => {
     const mount = mountRef.current
@@ -43,6 +67,7 @@ export function ToolPreview({ toolType, params }: Props) {
     scene.add(fill)
 
     const group = new THREE.Group()
+    groupRef.current = group
     scene.add(group)
 
     const matShank = new THREE.MeshStandardMaterial({
@@ -222,11 +247,13 @@ export function ToolPreview({ toolType, params }: Props) {
     }
     const ro = new ResizeObserver(onResize)
     ro.observe(mount)
+    applyPreviewHighlight(group, highlightRef.current)
 
     return () => {
       cancelAnimationFrame(raf)
       ro.disconnect()
       renderer.dispose()
+      groupRef.current = null
       matShank.dispose()
       matCutting.dispose()
       matFlute.dispose()
@@ -236,6 +263,8 @@ export function ToolPreview({ toolType, params }: Props) {
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
           obj.geometry.dispose()
+          const extra = obj.userData.highlightMaterial as THREE.Material | undefined
+          extra?.dispose()
         }
       })
       if (mount.contains(renderer.domElement)) {
@@ -245,13 +274,20 @@ export function ToolPreview({ toolType, params }: Props) {
     }
   }, [toolType, params])
 
+  useEffect(() => {
+    highlightRef.current = highlight
+    if (groupRef.current) applyPreviewHighlight(groupRef.current, highlight)
+  }, [highlight])
+
   return (
     <div className="preview-panel">
       <div className="preview-header">
         <span className="preview-title">
           {toolType === 'drill' ? drillCaption(normalizeDrill(params)) : 'Live 3D preview'}
         </span>
-        <span className="preview-badge">Simplified geometry — not grind sim</span>
+        <span className="preview-badge">
+          {highlight ? `Highlighting the ${previewPartLabel(highlight)}` : 'Simplified geometry — not grind sim'}
+        </span>
       </div>
       <div ref={mountRef} className="preview-canvas" />
     </div>

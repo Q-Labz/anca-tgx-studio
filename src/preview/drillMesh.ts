@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { frustumHeight, pointConeHeight } from '../lib/drillMath'
+import type { PreviewPart } from '../lib/drillGuide'
 import type { DrillParams, WebThinningStyle } from '../lib/types'
 
 export interface DrillMaterials {
@@ -17,6 +18,12 @@ interface FluteOptions {
   angleOffset?: number
   /** Second land, drawn by the twist body. Not a flute groove. */
   doubleMargin?: boolean
+  part?: PreviewPart
+}
+
+function mark(mesh: THREE.Mesh, part: PreviewPart) {
+  mesh.userData.part = part
+  mesh.userData.baseMaterial = mesh.material
 }
 
 function finite(n: number, fallback: number): number {
@@ -29,12 +36,14 @@ function addCyl(
   length: number,
   zStart: number,
   material: THREE.Material,
+  part: PreviewPart,
   segments = 28,
 ): number {
   const h = Math.max(length, 0.02)
   const mesh = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(radius, 0.01), Math.max(radius, 0.01), h, segments), material)
   mesh.rotation.x = -Math.PI / 2
   mesh.position.z = zStart + h / 2
+  mark(mesh, part)
   group.add(mesh)
   return zStart + h
 }
@@ -45,11 +54,13 @@ function addCone(
   length: number,
   zStart: number,
   material: THREE.Material,
+  part: PreviewPart,
 ): number {
   const h = Math.max(length, 0.02)
   const mesh = new THREE.Mesh(new THREE.ConeGeometry(Math.max(radius, 0.01), h, 28), material)
   mesh.rotation.x = -Math.PI / 2
   mesh.position.z = zStart + h / 2
+  mark(mesh, part)
   group.add(mesh)
   return zStart + h
 }
@@ -61,6 +72,7 @@ function addFrustum(
   length: number,
   zStart: number,
   material: THREE.Material,
+  part: PreviewPart,
 ): number {
   const h = Math.max(length, 0.02)
   const mesh = new THREE.Mesh(
@@ -69,6 +81,7 @@ function addFrustum(
   )
   mesh.rotation.x = -Math.PI / 2
   mesh.position.z = zStart + h / 2
+  mark(mesh, part)
   group.add(mesh)
   return zStart + h
 }
@@ -99,6 +112,7 @@ function addFlutes(
       const gr = Math.max(radius * 0.26 * groove, 0.012)
       const ball = new THREE.Mesh(new THREE.SphereGeometry(gr, 7, 5), material)
       ball.position.set(Math.cos(angle) * radius * radial, Math.sin(angle) * radius * radial, z)
+      mark(ball, options?.part ?? 'flute')
       group.add(ball)
     }
   }
@@ -121,6 +135,7 @@ function addConeFlutes(
       const r = Math.max(radius * t, 0.01)
       const ball = new THREE.Mesh(new THREE.SphereGeometry(Math.max(r * 0.28, 0.012), 6, 4), material)
       ball.position.set(Math.cos(base) * r * 0.72, Math.sin(base) * r * 0.72, z0 + length * t)
+      mark(ball, 'flute')
       group.add(ball)
     }
   }
@@ -141,6 +156,7 @@ function addWebSlot(
     )
     slot.position.z = coneH * 0.28
     slot.rotation.z = turn
+    mark(slot, 'web')
     group.add(slot)
   }
   if (style === 'X') {
@@ -165,7 +181,7 @@ function addCoolant(
   if (count <= 0 || length <= 0) return
   const hr = Math.max(holeRadius, radius * 0.08)
   if (count === 1) {
-    addCyl(group, hr, length, z0, material, 12)
+    addCyl(group, hr, length, z0, material, 'coolant', 12)
     return
   }
   for (let i = 0; i < count; i++) {
@@ -175,6 +191,7 @@ function addCoolant(
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(hr, hr, h, 10), material)
     mesh.rotation.x = -Math.PI / 2
     mesh.position.set(Math.cos(angle) * offset, Math.sin(angle) * offset, z0 + h / 2)
+    mark(mesh, 'coolant')
     group.add(mesh)
   }
   if (coneHeight <= 0.02) return
@@ -185,6 +202,7 @@ function addCoolant(
     const angle = (i / count) * Math.PI * 2 + Math.PI / count
     const port = new THREE.Mesh(new THREE.SphereGeometry(Math.max(hr, radius * 0.14), 8, 6), material)
     port.position.set(Math.cos(angle) * exitRadius, Math.sin(angle) * exitRadius, exitZ)
+    mark(port, 'coolant')
     group.add(port)
   }
 }
@@ -192,7 +210,7 @@ function addCoolant(
 function addShank(group: THREE.Group, drill: DrillParams, scale: number, z: number, mats: DrillMaterials): number {
   const radius = (Math.max(finite(drill.shankDiameter, drill.diameter), 0.2) * scale) / 2
   const length = Math.max(finite(drill.shankLength, 10), 0.5) * scale
-  return addCyl(group, radius, length, z, mats.shank, 32)
+  return addCyl(group, radius, length, z, mats.shank, 'shank', 32)
 }
 
 function twistBody(
@@ -207,21 +225,22 @@ function twistBody(
   const cone = Math.min(pointConeHeight(drill.diameter, drill.pointAngle) * scale, flute * 0.8)
   let z = 0
   if (cone > 0.02) {
-    z = addCone(group, radius, cone, z, mats.tip)
+    z = addCone(group, radius, cone, z, mats.tip, 'point')
     addConeFlutes(group, radius, cone, 0, drill.fluteCount, mats.flute)
     addWebSlot(group, radius, cone, drill.webThinning, mats.flute)
   } else {
-    z = addCyl(group, radius, Math.max(0.08, 0.35 * scale), z, mats.tip, 24)
+    z = addCyl(group, radius, Math.max(0.08, 0.35 * scale), z, mats.tip, 'point', 24)
   }
   const body = Math.max(flute - cone, 0.08)
   const bodyStart = z
-  z = addCyl(group, radius, body, z, mats.cutting)
+  z = addCyl(group, radius, body, z, mats.cutting, 'flute')
   addFlutes(group, radius, body, bodyStart, drill.fluteCount, drill.helixAngle, mats.flute, options)
   if (options?.doubleMargin) {
     addFlutes(group, radius, body, bodyStart, drill.fluteCount, drill.helixAngle, mats.margin, {
       groove: 0.42,
       radial: 0.97,
       angleOffset: 0.38,
+      part: 'margin',
     })
   }
   if (drill.coolantHoles > 0) {
@@ -242,11 +261,11 @@ function twistBody(
 function addSpot(group: THREE.Group, drill: DrillParams, scale: number, mats: DrillMaterials): void {
   const radius = (Math.max(drill.diameter, 0.2) * scale) / 2
   const cone = Math.max(pointConeHeight(drill.diameter, drill.pointAngle) * scale, radius * 0.8)
-  let z = addCone(group, radius, cone, 0, mats.tip)
+  let z = addCone(group, radius, cone, 0, mats.tip, 'point')
   addConeFlutes(group, radius, cone, 0, drill.fluteCount, mats.flute)
   const land = Math.max(drill.fluteLength * scale - cone, radius * 0.45)
   const landStart = z
-  z = addCyl(group, radius, land, z, mats.cutting)
+  z = addCyl(group, radius, land, z, mats.cutting, 'flute')
   addFlutes(group, radius, land, landStart, drill.fluteCount, drill.helixAngle, mats.flute, { groove: 0.8 })
   addShank(group, drill, scale, z, mats)
 }
@@ -259,13 +278,13 @@ function addCenter(group: THREE.Group, drill: DrillParams, scale: number, mats: 
     Math.max(drill.pilotLength, 0.2) * scale * 0.7,
   )
   let z = 0
-  if (pilotCone > 0.015) z = addCone(group, pilotR, pilotCone, z, mats.tip)
+  if (pilotCone > 0.015) z = addCone(group, pilotR, pilotCone, z, mats.tip, 'point')
   const pilotCyl = Math.max(drill.pilotLength * scale - pilotCone, 0.03)
   const pilotStart = z
-  z = addCyl(group, pilotR, pilotCyl, z, mats.cutting, 20)
+  z = addCyl(group, pilotR, pilotCyl, z, mats.cutting, 'flute', 20)
   addFlutes(group, pilotR, pilotCyl, pilotStart, 2, 12, mats.flute, { groove: 0.7 })
   const csk = Math.max(frustumHeight(drill.diameter, drill.countersinkDiameter, drill.countersinkAngle) * scale, 0.04)
-  z = addFrustum(group, pilotR, bodyR, csk, z, mats.tip)
+  z = addFrustum(group, pilotR, bodyR, csk, z, mats.tip, 'chamfer')
   addShank(group, drill, scale, z, mats)
 }
 
@@ -278,18 +297,18 @@ function addStep(group: THREE.Group, drill: DrillParams, scale: number, mats: Dr
     if (index === 0) {
       const cone = Math.min(pointConeHeight(step.diameter, drill.pointAngle) * scale, length * 0.75)
       if (cone > 0.02) {
-        z = addCone(group, radius, cone, z, mats.tip)
+        z = addCone(group, radius, cone, z, mats.tip, 'point')
         addWebSlot(group, radius, cone, drill.webThinning, mats.flute)
       }
       const body = Math.max(length - cone, 0.05)
       const start = z
-      z = addCyl(group, radius, body, z, mats.cutting)
+      z = addCyl(group, radius, body, z, mats.cutting, 'step')
       addFlutes(group, radius, body, start, drill.fluteCount, drill.helixAngle, mats.flute)
       return
     }
-    z = addCyl(group, radius, Math.max(0.07, 0.28 * scale), z, mats.tip, 24)
+    z = addCyl(group, radius, Math.max(0.07, 0.28 * scale), z, mats.tip, 'step', 24)
     const start = z
-    z = addCyl(group, radius, length, z, mats.cutting)
+    z = addCyl(group, radius, length, z, mats.cutting, 'step')
     addFlutes(group, radius, length, start, drill.fluteCount, drill.helixAngle, mats.flute)
   })
   addShank(group, drill, scale, z, mats)
@@ -301,16 +320,16 @@ function addSubland(group: THREE.Group, drill: DrillParams, scale: number, mats:
   const frontLen = Math.max(drill.fluteLength, 0.3) * scale
   const cone = Math.min(pointConeHeight(drill.diameter, drill.pointAngle) * scale, frontLen * 0.7)
   let z = 0
-  if (cone > 0.02) z = addCone(group, frontR, cone, z, mats.tip)
+  if (cone > 0.02) z = addCone(group, frontR, cone, z, mats.tip, 'point')
   const frontBody = Math.max(frontLen - cone, 0.05)
   const frontStart = z
-  z = addCyl(group, frontR, frontBody, z, mats.cutting)
+  z = addCyl(group, frontR, frontBody, z, mats.cutting, 'flute')
   addFlutes(group, frontR, frontBody, frontStart, drill.fluteCount, drill.helixAngle, mats.flute)
   const shoulder = Math.max(frustumHeight(drill.diameter, drill.sublandDiameter, drill.pointAngle) * scale, 0.05)
-  z = addFrustum(group, frontR, rearR, shoulder, z, mats.tip)
+  z = addFrustum(group, frontR, rearR, shoulder, z, mats.tip, 'step')
   const rearLen = Math.max(drill.sublandLength, 0.3) * scale
   const rearStart = z
-  z = addCyl(group, rearR, rearLen, z, mats.cutting)
+  z = addCyl(group, rearR, rearLen, z, mats.cutting, 'step')
   addFlutes(group, rearR, rearLen, rearStart, drill.fluteCount, drill.helixAngle, mats.flute)
   addShank(group, drill, scale, z, mats)
 }
@@ -322,13 +341,14 @@ function addGun(group: THREE.Group, drill: DrillParams, scale: number, mats: Dri
   const tip = new THREE.Mesh(new THREE.ConeGeometry(radius, cone, 14), mats.tip)
   tip.rotation.x = -Math.PI / 2
   tip.position.set(radius * 0.22, 0, cone / 2)
+  mark(tip, 'point')
   group.add(tip)
   let z = cone * 0.55
   const headLen = Math.min(Math.max(16 * scale, radius * 3.5), flute * 0.22)
   const headStart = z
-  z = addCyl(group, radius, headLen, z, mats.cutting)
+  z = addCyl(group, radius, headLen, z, mats.cutting, 'flute')
   const tubeLen = Math.max(flute - headLen - cone * 0.55, radius)
-  z = addCyl(group, radius * 0.96, tubeLen, z, mats.shank)
+  z = addCyl(group, radius * 0.96, tubeLen, z, mats.shank, 'flute')
   const grooves = drill.gunFluteStyle === 'v' || drill.fluteCount >= 2 ? 2 : 1
   addFlutes(group, radius, headLen + tubeLen * 0.98, headStart, grooves, 0, mats.flute, { groove: 1.35, radial: 0.72 })
   if (drill.coolantHoles > 0) {
@@ -345,12 +365,13 @@ function addGun(group: THREE.Group, drill: DrillParams, scale: number, mats: Dri
   const shankR = (Math.max(drill.shankDiameter, drill.diameter) * scale) / 2
   const shankLen = Math.max(drill.shankLength, 8) * scale
   const shankStart = z
-  z = addCyl(group, Math.max(shankR, radius), shankLen, z, mats.shank)
+  z = addCyl(group, Math.max(shankR, radius), shankLen, z, mats.shank, 'shank')
   const flat = new THREE.Mesh(
     new THREE.BoxGeometry(shankR * 0.45, shankR * 1.3, Math.min(shankLen * 0.28, 8 * scale)),
     mats.flute,
   )
   flat.position.set(shankR * 0.8, 0, shankStart + shankLen * 0.45)
+  mark(flat, 'shank')
   group.add(flat)
 }
 
@@ -360,13 +381,13 @@ function addCountersink(group: THREE.Group, drill: DrillParams, scale: number, m
   const flute = Math.max(drill.fluteLength, 0.3) * scale
   const cone = Math.min(pointConeHeight(drill.diameter, drill.pointAngle) * scale, flute * 0.7)
   let z = 0
-  if (cone > 0.02) z = addCone(group, radius, cone, z, mats.tip)
+  if (cone > 0.02) z = addCone(group, radius, cone, z, mats.tip, 'point')
   const body = Math.max(flute - cone, 0.05)
   const start = z
-  z = addCyl(group, radius, body, z, mats.cutting)
+  z = addCyl(group, radius, body, z, mats.cutting, 'flute')
   addFlutes(group, radius, body, start, drill.fluteCount, drill.helixAngle, mats.flute)
   const axial = Math.max(frustumHeight(drill.diameter, drill.chamferDiameter, drill.chamferAngle) * scale, 0.04)
-  z = addFrustum(group, radius, chamferR, axial, z, mats.tip)
+  z = addFrustum(group, radius, chamferR, axial, z, mats.tip, 'chamfer')
   addShank(group, drill, scale, z, mats)
 }
 
@@ -375,11 +396,11 @@ function addFlat(group: THREE.Group, drill: DrillParams, scale: number, mats: Dr
   const hubD = Math.min(Math.max(drill.webThickness, drill.diameter * 0.12), drill.diameter * 0.4)
   const hubR = (hubD * scale) / 2
   const hubH = Math.max(pointConeHeight(hubD, 135) * scale, hubR * 0.6)
-  let z = addCone(group, hubR, hubH, 0, mats.tip)
-  z = addCyl(group, radius, Math.max(0.08, 0.3 * scale), z, mats.tip, 28)
+  let z = addCone(group, hubR, hubH, 0, mats.tip, 'point')
+  z = addCyl(group, radius, Math.max(0.08, 0.3 * scale), z, mats.tip, 'point', 28)
   const flute = Math.max(drill.fluteLength, 0.4) * scale
   const start = z
-  z = addCyl(group, radius, flute, z, mats.cutting)
+  z = addCyl(group, radius, flute, z, mats.cutting, 'flute')
   addFlutes(group, radius, flute, start, drill.fluteCount, drill.helixAngle, mats.flute)
   addShank(group, drill, scale, z, mats)
 }
@@ -388,15 +409,15 @@ function addCore(group: THREE.Group, drill: DrillParams, scale: number, mats: Dr
   const radius = (Math.max(drill.diameter, 0.4) * scale) / 2
   let z = 0
   if (drill.pointAngle >= 170) {
-    z = addCyl(group, radius, Math.max(0.08, 0.25 * scale), z, mats.tip, 28)
-    addCyl(group, radius * 0.42, Math.max(0.12, 0.4 * scale), 0.02, mats.hole, 16)
+    z = addCyl(group, radius, Math.max(0.08, 0.25 * scale), z, mats.tip, 'point', 28)
+    addCyl(group, radius * 0.42, Math.max(0.12, 0.4 * scale), 0.02, mats.hole, 'point', 16)
   } else {
     const cone = Math.min(pointConeHeight(drill.diameter, drill.pointAngle) * scale, radius * 1.4)
-    z = addFrustum(group, radius * 0.55, radius, Math.max(cone, 0.05), z, mats.tip)
+    z = addFrustum(group, radius * 0.55, radius, Math.max(cone, 0.05), z, mats.tip, 'point')
   }
   const flute = Math.max(drill.fluteLength, 0.4) * scale
   const start = z
-  z = addCyl(group, radius, flute, z, mats.cutting)
+  z = addCyl(group, radius, flute, z, mats.cutting, 'flute')
   addFlutes(group, radius, flute, start, Math.max(drill.fluteCount, 3), drill.helixAngle, mats.flute, {
     groove: 1.25,
   })
