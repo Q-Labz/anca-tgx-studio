@@ -19,6 +19,8 @@ export interface DrillReveal {
   wear: boolean
   /** Web-thinning notches on the point. */
   gash: boolean
+  /** Extra primary relief behind the lip. */
+  relief: boolean
   /** Millimetres removed from the flute, with the point kept. */
   shortenMm: number
 }
@@ -35,6 +37,7 @@ export const FINISHED_REVEAL: DrillReveal = {
   flatFace: false,
   wear: false,
   gash: true,
+  relief: false,
   shortenMm: 0,
 }
 
@@ -527,9 +530,9 @@ export function planDrill(drill: DrillParams, scale: number, reveal: DrillReveal
   const notch: WebThinningStyle = reveal.gash ? drill.webThinning : 'none'
   const webs = webRadii(drill.webThickness, Math.max(drill.diameter, 0.2), notch)
   const marginFrac = marginFraction(drill.marginWidth, Math.max(drill.diameter, 0.2), fluteCount)
-  const clearanceDrop = reveal.clearance
-    ? Math.max(drill.bodyClearance / 2, drill.diameter * 0.012) * scale
-    : 0
+  const clearanceDrop =
+    (reveal.clearance ? Math.max(drill.bodyClearance / 2, drill.diameter * 0.012) * scale : 0) +
+    (reveal.relief ? Math.max(drill.diameter * 0.018, 0.03) * scale : 0)
   const cuttingR = Math.max(drill.diameter, 0.05) * scale * 0.5
   const chisel = Math.max(cuttingR * 0.045, webs.tip * scale * 0.35)
   const helixMm = drill.drillType === 'step'

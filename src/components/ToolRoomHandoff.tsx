@@ -15,6 +15,9 @@ import {
   exportHandoffJson,
   type HandoffFieldRow,
 } from '../lib/toolroomHandoff'
+import { buildGrindPlan, type GrindPlan } from '../lib/grindPlan'
+import type { GrindMode } from '../lib/grindOps'
+import { GRIND_DISCLAIMER, type WheelPack } from '../lib/wheelPacks'
 
 export interface DesignDraft {
   toolType: ToolType
@@ -25,23 +28,33 @@ export interface DesignDraft {
 
 interface Props {
   draft: DesignDraft
+  grindMode: GrindMode
+  stockMm: number
+  pack: WheelPack
   onLoadDesign: (d: SavedDesign) => void
 }
 
-export function ToolRoomHandoff({ draft, onLoadDesign }: Props) {
+export function ToolRoomHandoff({ draft, grindMode, stockMm, pack, onLoadDesign }: Props) {
   const [designs] = useState<SavedDesign[]>(() => listDesigns())
   const [message, setMessage] = useState<string | null>(null)
   const [showPrint, setShowPrint] = useState(false)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
 
   const params = draft.toolType === 'endmill' ? draft.endmill : draft.drill
+  const grindPlan = useMemo(
+    () =>
+      draft.toolType === 'drill'
+        ? buildGrindPlan(normalizeDrill(draft.drill), grindMode, pack, stockMm)
+        : null,
+    [draft.toolType, draft.drill, grindMode, pack, stockMm],
+  )
   const mapping = useMemo(
-    () => buildHandoffPayload(draft.toolType, params, draft.designId).mapping,
-    [draft.toolType, params, draft.designId],
+    () => buildHandoffPayload(draft.toolType, params, draft.designId, grindPlan).mapping,
+    [draft.toolType, params, draft.designId, grindPlan],
   )
   const payload = useMemo(
-    () => buildHandoffPayload(draft.toolType, params, draft.designId),
-    [draft.toolType, params, draft.designId],
+    () => buildHandoffPayload(draft.toolType, params, draft.designId, grindPlan),
+    [draft.toolType, params, draft.designId, grindPlan],
   )
 
   const flash = (msg: string) => {
@@ -226,12 +239,40 @@ export function ToolRoomHandoff({ draft, onLoadDesign }: Props) {
             against your release. Neck rows appear only when neck values are set.
           </p>
         </div>
+
+        {grindPlan && (
+          <div className="panel" data-testid="handoff-grind-plan">
+            <h2>Grind plan in the JSON</h2>
+            <p className="muted tiny">{GRIND_DISCLAIMER}</p>
+            <p>
+              <strong>{grindPlan.pack.name}</strong>
+              <span className="tag">{grindPlan.mode === 'make' ? 'Make from blank' : 'Resharpen'}</span>
+            </p>
+            {grindPlan.warnings.length > 0 && (
+              <ul className="grind-warnings">
+                {grindPlan.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            )}
+            <ul className="assign-list">
+              {grindPlan.operations.map((op) => (
+                <li key={op.id}>
+                  <span>{op.title}</span>
+                  <span>{op.wheelName ?? 'No wheel'}</span>
+                  <span className="muted">{op.forms}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </main>
 
       {showPrint && (
         <HandoffPrintSheet
           payload={payload}
           mapping={mapping}
+          grindPlan={grindPlan}
           onClose={() => setShowPrint(false)}
         />
       )}
@@ -242,10 +283,12 @@ export function ToolRoomHandoff({ draft, onLoadDesign }: Props) {
 function HandoffPrintSheet({
   payload,
   mapping,
+  grindPlan,
   onClose,
 }: {
   payload: ReturnType<typeof buildHandoffPayload>
   mapping: HandoffFieldRow[]
+  grindPlan: GrindPlan | null
   onClose: () => void
 }) {
   const name =
@@ -288,6 +331,22 @@ function HandoffPrintSheet({
           </tbody>
         </table>
         <h2>Checklist</h2>
+        {grindPlan && (
+          <>
+            <h2>Educational grind plan</h2>
+            <p className="disclaimer">{grindPlan.disclaimer}</p>
+            <p>
+              {grindPlan.pack.name} · {grindPlan.mode}
+            </p>
+            <ol className="print-ops">
+              {grindPlan.operations.map((op) => (
+                <li key={op.id}>
+                  {op.title} — {op.wheelName ?? 'no wheel'} — {op.forms}
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
         <ol className="print-ops">
           <li>Enter values in ToolRoom iGrind (or run an adapted script)</li>
           <li>Save .TOM in ToolRoom</li>
