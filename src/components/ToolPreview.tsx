@@ -65,22 +65,22 @@ export function ToolPreview({ toolType, params, highlight = null }: Props) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setSize(width, height)
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.12
+    renderer.toneMappingExposure = 1.02
     renderer.outputColorSpace = THREE.SRGBColorSpace
     mount.appendChild(renderer.domElement)
 
     const pmrem = new THREE.PMREMGenerator(renderer)
     const envTex = pmrem.fromScene(new RoomEnvironment(), 0.035).texture
     scene.environment = envTex
-    scene.environmentIntensity = 0.78
-    scene.add(new THREE.AmbientLight(0xdfe8f0, 0.14))
-    const key = new THREE.DirectionalLight(0xfff4e4, 1.45)
+    scene.environmentIntensity = 0.32
+    scene.add(new THREE.AmbientLight(0xe4ebf1, 0.32))
+    const key = new THREE.DirectionalLight(0xfff6ec, 0.82)
     key.position.set(28, 62, 22)
     scene.add(key)
-    const fill = new THREE.DirectionalLight(0x9ec0d8, 0.28)
+    const fill = new THREE.DirectionalLight(0xb7cddd, 0.28)
     fill.position.set(-48, 18, -10)
     scene.add(fill)
-    const rim = new THREE.DirectionalLight(0xf3f7ff, 0.62)
+    const rim = new THREE.DirectionalLight(0xf4f7fb, 0.2)
     rim.position.set(-6, 18, -56)
     scene.add(rim)
 
@@ -97,9 +97,9 @@ export function ToolPreview({ toolType, params, highlight = null }: Props) {
       void neverType
     }
 
-    // Side catalog view: the point stays one tip, and the user orbits instead of a forced spin.
-    group.rotation.x = -Math.PI / 2.35
-    group.rotation.z = Math.PI / 8
+    // Three-quarter side view of the whole tool. Orbit and zoom stay with the user.
+    group.rotation.x = -Math.PI / 2.18
+    group.rotation.z = Math.PI / 6
     group.updateMatrixWorld(true)
     const rawBox = new THREE.Box3().setFromObject(group)
     group.position.sub(rawBox.getCenter(new THREE.Vector3()))
@@ -109,10 +109,10 @@ export function ToolPreview({ toolType, params, highlight = null }: Props) {
     const size = box.getSize(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.y, size.z, 0.01)
     const tipWorld = new THREE.Vector3(0, 0, 0).applyMatrix4(group.matrixWorld)
-    const look = new THREE.Vector3(0, 0, 0).lerp(tipWorld, toolType === 'endmill' ? 0.2 : 0.08)
+    const look = new THREE.Vector3(0, 0, 0).lerp(tipWorld, toolType === 'endmill' ? 0.16 : 0.14)
     const fov = (camera.fov * Math.PI) / 180
-    const dist = (maxDim / 2 / Math.tan(fov / 2)) * 1.14
-    camera.position.set(dist * 0.86, dist * 0.22, dist * 0.5)
+    const dist = (maxDim / 2 / Math.tan(fov / 2)) * 1.52
+    camera.position.set(dist * 0.62, dist * 0.46, dist * 0.7)
     camera.lookAt(look)
     camera.near = Math.max(dist / 140, 0.01)
     camera.far = dist * 24
@@ -123,7 +123,7 @@ export function ToolPreview({ toolType, params, highlight = null }: Props) {
     controls.enableDamping = true
     controls.dampingFactor = 0.08
     controls.enablePan = false
-    controls.minDistance = dist * 0.28
+    controls.minDistance = dist * 0.2
     controls.maxDistance = dist * 3
     controls.update()
 

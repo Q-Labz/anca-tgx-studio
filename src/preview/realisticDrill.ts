@@ -184,8 +184,10 @@ function sampleCutting(plan: DrillMeshPlan, span: MeshSpan, z: number, theta: nu
   }
 
   const open = fluteOpenAt(z, plan.coneH, plan.fluteEnd, plan.fluteOpen)
-  const along = smoothstep(z / Math.max(plan.fluteEnd * 0.45, 1e-4))
-  const web = Math.min(outer * 0.92, mix(plan.webTip, plan.webOuter, along))
+  const fluteSpan = Math.max(plan.fluteEnd - plan.coneH * 0.2, 1e-4)
+  const along = smoothstep(clamp((z - plan.coneH * 0.2) / fluteSpan, 0, 1))
+  const webShank = Math.min(outer * 0.58, Math.max(plan.webOuter * 1.55, plan.webTip * 1.85))
+  const web = Math.min(outer * 0.72, mix(plan.webTip, webShank, along))
   let r = stationRadius(
     theta,
     plan.fluteCount,
@@ -203,8 +205,8 @@ function sampleCutting(plan: DrillMeshPlan, span: MeshSpan, z: number, theta: nu
   }
   r = Math.min(outer, Math.max(r, Math.min(plan.chisel * 0.65, outer)))
   if (plan.coreHole != null && span.kind === 'point') r = Math.max(r, plan.coreHole * 0.98)
-  const land = r > outer * 0.972
-  const shade = land ? 1 : mix(0.38, 0.86, r / Math.max(outer, 1e-4))
+  const land = r > outer * 0.96
+  const shade = land ? 1 : mix(0.84, 0.96, r / Math.max(outer, 1e-4))
   const twist = (z / Math.max(plan.fluteEnd, 1e-4)) * plan.helixTwist
   return { r, shade, zShift: 0, twist }
 }
@@ -231,20 +233,20 @@ function cuttingMaterial(coating: string, material: DrillParams['material'], sto
     roughness: finish.roughness,
     clearcoat: finish.clearcoat,
     clearcoatRoughness: finish.clearcoatRoughness,
-    envMapIntensity: 1.18,
+    envMapIntensity: 0.34,
     vertexColors: true,
   })
 }
 
 function shankMaterial(): THREE.MeshPhysicalMaterial {
   return new THREE.MeshPhysicalMaterial({
-    color: 0x9aa4ae,
-    metalness: 0.94,
-    roughness: 0.22,
-    clearcoat: 0.16,
-    clearcoatRoughness: 0.34,
-    anisotropy: 0.72,
-    envMapIntensity: 1.05,
+    color: 0x8e99a3,
+    metalness: 0.5,
+    roughness: 0.52,
+    clearcoat: 0.02,
+    clearcoatRoughness: 0.7,
+    anisotropy: 0.32,
+    envMapIntensity: 0.32,
   })
 }
 
