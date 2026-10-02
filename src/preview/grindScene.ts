@@ -1,5 +1,9 @@
 import * as THREE from 'three'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import type { GrindDuty, GrindStage, GrindVisual } from '../lib/grindOps'
+import type { DrillParams } from '../lib/types'
+import { buildDrillMesh } from './realisticDrill'
+import type { DrillReveal } from './fluteProfile'
 import type { Abrasive } from '../lib/wheelPacks'
 
 export type CameraPreset = 'overview' | 'tip' | 'flute' | 'wheel'
@@ -19,30 +23,27 @@ interface ToolMetrics {
   shankEnd: number
 }
 
-const STOCK = 0xd7c4a8
-const GROUND = 0xd5dde3
-const FLUTE = 0x4e5c68
-const WEAR = 0x8a5a3a
-const SHANK = 0x8a9ba8
-const GASH = 0x2a333c
-const HOLE = 0x10161c
-const SECONDARY = 0x9aadc0
-const FACE = 0xe7eef3
-
 function has(show: readonly GrindStage[], stage: GrindStage): boolean {
   return show.includes(stage)
 }
 
-function diameterScaleFor(visual: GrindVisual, lengthScale: number): number {
-  const nominal = Math.max(visual.diameter, ...visual.steps.map((step) => step.diameter), 0.2)
-  const rawRadius = (nominal / 2) * lengthScale
-  if (rawRadius < 2.2) return lengthScale * (2.2 / rawRadius)
-  return lengthScale
-}
-
-function coneHeight(radius: number, pointAngle: number): number {
-  const half = (Math.min(160, Math.max(70, pointAngle)) * Math.PI) / 360
-  return radius / Math.tan(half)
+function revealFor(show: readonly GrindStage[], visual: GrindVisual): DrillReveal {
+  const face = has(show, 'face')
+  return {
+    fluteOpen: has(show, 'flute') ? 1 : 0,
+    point: has(show, 'point') && !face,
+    clearance: has(show, 'clearance'),
+    steps: has(show, 'step'),
+    chamfer: has(show, 'chamfer'),
+    coolant: has(show, 'coolant'),
+    driver: has(show, 'driver'),
+    stock: !has(show, 'od'),
+    flatFace: face,
+    wear: has(show, 'wear'),
+    gash: has(show, 'gash'),
+    relief: has(show, 'secondary'),
+    shortenMm: has(show, 'length') ? visual.stockMm : 0,
+  }
 }
 
 function metal(color: number): THREE.MeshStandardMaterial {
@@ -53,223 +54,28 @@ function metal(color: number): THREE.MeshStandardMaterial {
   })
 }
 
-function addCylinder(
-  group: THREE.Group,
-  radiusTip: number,
-  radiusBack: number,
-  length: number,
-  zStart: number,
-  material: THREE.Material,
-) {
-  if (length <= 0.08 || radiusTip <= 0 || radiusBack <= 0) return
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radiusTip, radiusBack, length, 16), material)
-  mesh.rotation.x = -Math.PI / 2
-  mesh.position.z = zStart + length / 2
-  group.add(mesh)
-}
-
-function addFlutes(
-  group: THREE.Group,
-  visual: GrindVisual,
-  radius: number,
-  zStart: number,
-  zEnd: number,
-  material: THREE.Material,
-) {
-  const count = Math.min(4, Math.max(1, Math.round(visual.fluteCount) || 1))
-  const balls = 6
-  const span = Math.max(0.5, zEnd - zStart)
-  for (let flute = 0; flute < count; flute += 1) {
-    for (let step = 0; step < balls; step += 1) {
-      const t = step / (balls - 1)
-      const angle =
-        (flute / count) * Math.PI * 2 +
-        (Math.max(visual.helixAngle, 0) * Math.PI) / 180 * t * 2.4
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.28, radius * 0.28), 8, 6), material)
-      mesh.position.set(Math.cos(angle) * radius * 0.62, Math.sin(angle) * radius * 0.62, zStart + span * t)
-      mesh.scale.z = 1.8
-      group.add(mesh)
-    }
+function scaleMetrics(metrics: ToolMetrics, factor: number): ToolMetrics {
+  return {
+    tipZ: metrics.tipZ * factor,
+    tipRadius: metrics.tipRadius * factor,
+    fluteStart: metrics.fluteStart * factor,
+    fluteEnd: metrics.fluteEnd * factor,
+    shoulderZ: metrics.shoulderZ * factor,
+    shankEnd: metrics.shankEnd * factor,
   }
 }
 
-function buildTool(visual: GrindVisual, show: readonly GrindStage[]): THREE.Group {
+function buildTool(drill: DrillParams, visual: GrindVisual, show: readonly GrindStage[]): THREE.Group {
   const group = new THREE.Group()
-  const lengthScale = 62 / Math.max(visual.overallLength, 1)
-  const diameterScale = diameterScaleFor(visual, lengthScale)
-  const ground = has(show, 'od')
-  const bodyMat = metal(ground ? GROUND : STOCK)
-  const shankMat = metal(SHANK)
-  const fluteMat = metal(FLUTE)
-  const shorten = has(show, 'length')
-    ? Math.min(visual.stockMm * lengthScale * 8, Math.max(visual.fluteLength, 1) * lengthScale * 0.12, 5)
-    : 0
-  const tipZ = shorten
-  const d = (millimetres: number) => (millimetres / 2) * diameterScale * (ground ? 1 : 1.18)
-
-  let tipRadius = d(visual.diameter)
-  let fluteStart = tipZ
-  let fluteEnd = tipZ + Math.max(6, visual.fluteLength * lengthScale)
-  let shoulderZ = fluteStart + (fluteEnd - fluteStart) * 0.45
-  const shankRadius = Math.max(0.6, (visual.shankDiameter / 2) * diameterScale)
-  let shankEnd = Math.max(fluteEnd + 6, visual.overallLength * lengthScale)
-
-  const pointRadius = () => {
-    if (visual.family === 'step' && has(show, 'step') && visual.steps[0]) return d(visual.steps[0].diameter)
-    return d(visual.diameter)
+  const lengthScale = 62 / Math.max(drill.overallLength, 1)
+  buildDrillMesh(group, drill, lengthScale, { quality: 'sim', reveal: revealFor(show, visual) })
+  let metrics = group.userData.metrics as ToolMetrics
+  if (metrics.tipRadius > 0 && metrics.tipRadius < 1.5) {
+    const factor = 1.5 / metrics.tipRadius
+    group.scale.setScalar(factor)
+    metrics = scaleMetrics(metrics, factor)
+    group.userData.metrics = metrics
   }
-
-  if (has(show, 'point') && !has(show, 'face')) {
-    tipRadius = pointRadius()
-    const height = coneHeight(tipRadius, visual.pointAngle)
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(tipRadius, height, 16), metal(GROUND))
-    cone.rotation.x = -Math.PI / 2
-    cone.position.z = tipZ + height / 2
-    group.add(cone)
-    if (has(show, 'secondary')) {
-      const relief = new THREE.Mesh(
-        new THREE.ConeGeometry(tipRadius * 1.05, height * 0.62, 16),
-        metal(SECONDARY),
-      )
-      relief.rotation.x = -Math.PI / 2
-      relief.position.z = tipZ + height * 0.72
-      group.add(relief)
-    }
-    fluteStart = tipZ + height * 0.92
-  } else if (has(show, 'face')) {
-    tipRadius = d(visual.diameter)
-    const cap = new THREE.Mesh(new THREE.CircleGeometry(tipRadius * 0.98, 16), metal(FACE))
-    cap.rotation.y = Math.PI
-    cap.position.z = tipZ + 0.04
-    group.add(cap)
-    fluteStart = tipZ
-  }
-
-  const bodyLen = Math.max(2.5, fluteEnd - fluteStart)
-  const cleared = has(show, 'clearance')
-
-  if (visual.family === 'step' && visual.steps.length > 0) {
-    if (!has(show, 'step')) {
-      const big = d(Math.max(...visual.steps.map((step) => step.diameter)))
-      tipRadius = has(show, 'point') ? pointRadius() : big
-      addCylinder(group, big, big, bodyLen, fluteStart, bodyMat)
-      shoulderZ = fluteStart + bodyLen * 0.35
-    } else {
-      let z = fluteStart
-      visual.steps.forEach((step, index) => {
-        const length = Math.max(1.2, step.length * lengthScale)
-        const radius = d(step.diameter)
-        addCylinder(group, radius, radius, length, z, bodyMat)
-        if (index === 0) {
-          tipRadius = has(show, 'point') ? pointRadius() : radius
-          shoulderZ = z + length
-        }
-        z += length
-      })
-      fluteEnd = z
-      shankEnd = Math.max(fluteEnd + 6, shankEnd)
-    }
-  } else if (visual.family === 'subland') {
-    const front = d(visual.diameter)
-    const rear = d(visual.sublandDiameter)
-    if (!has(show, 'step')) {
-      addCylinder(group, rear, rear, bodyLen, fluteStart, bodyMat)
-      shoulderZ = fluteStart + bodyLen * 0.4
-      tipRadius = has(show, 'point') ? front : rear
-    } else {
-      const frontLen = Math.max(2, Math.min(bodyLen * 0.45, visual.fluteLength * lengthScale))
-      addCylinder(group, front, front, frontLen, fluteStart, bodyMat)
-      addCylinder(group, rear, rear, Math.max(2, bodyLen - frontLen), fluteStart + frontLen, bodyMat)
-      shoulderZ = fluteStart + frontLen
-      tipRadius = has(show, 'point') ? front : front
-    }
-  } else if (visual.family === 'center') {
-    const pilot = d(visual.diameter)
-    const mouth = d(Math.max(visual.countersinkDiameter, visual.diameter))
-    const pilotLen = Math.max(1.5, visual.pilotLength * lengthScale)
-    addCylinder(group, pilot, pilot, pilotLen, fluteStart, bodyMat)
-    if (has(show, 'chamfer')) {
-      const chamferLen = Math.max(2, mouth)
-      addCylinder(group, pilot, mouth, chamferLen, fluteStart + pilotLen, bodyMat)
-      shoulderZ = fluteStart + pilotLen
-      fluteEnd = fluteStart + pilotLen + chamferLen
-    } else {
-      addCylinder(group, mouth, mouth, bodyLen, fluteStart + pilotLen, bodyMat)
-      shoulderZ = fluteStart + pilotLen
-    }
-    tipRadius = pilot
-  } else if (visual.family === 'countersink') {
-    const radius = d(visual.diameter)
-    const mouth = d(Math.max(visual.chamferDiameter, visual.diameter))
-    const front = bodyLen * 0.62
-    addCylinder(group, radius, radius, front, fluteStart, bodyMat)
-    if (has(show, 'chamfer')) {
-      addCylinder(group, radius, mouth, Math.max(1.6, bodyLen - front), fluteStart + front, bodyMat)
-      shoulderZ = fluteStart + front
-    } else {
-      addCylinder(group, radius, radius, Math.max(1.6, bodyLen - front), fluteStart + front, bodyMat)
-    }
-    tipRadius = has(show, 'point') ? radius : radius
-  } else {
-    const radius = d(visual.diameter)
-    tipRadius = has(show, 'point') || has(show, 'face') ? radius : radius
-    if (cleared) {
-      const land = Math.min(bodyLen * 0.22, Math.max(1.2, radius * 1.3))
-      addCylinder(group, radius, radius, land, fluteStart, bodyMat)
-      addCylinder(group, radius * 0.9, radius * 0.9, Math.max(1, bodyLen - land), fluteStart + land, bodyMat)
-    } else {
-      addCylinder(group, radius, radius, bodyLen, fluteStart, bodyMat)
-    }
-    shoulderZ = fluteStart + bodyLen * 0.45
-  }
-
-  addCylinder(group, shankRadius, shankRadius, Math.max(4, shankEnd - fluteEnd), fluteEnd, shankMat)
-
-  if (has(show, 'flute')) addFlutes(group, visual, tipRadius, fluteStart, fluteEnd, fluteMat)
-
-  if (has(show, 'gash')) {
-    const slot = new THREE.Mesh(
-      new THREE.BoxGeometry(tipRadius * 0.28, tipRadius * 1.35, Math.max(0.4, tipRadius * 0.45)),
-      metal(GASH),
-    )
-    slot.position.set(0, 0, tipZ + tipRadius * 0.22)
-    slot.rotation.z = 0.5
-    group.add(slot)
-  }
-
-  if (has(show, 'wear')) {
-    const blob = new THREE.Mesh(new THREE.SphereGeometry(tipRadius * 0.72, 12, 10), metal(WEAR))
-    blob.scale.z = 0.55
-    blob.position.z = tipZ + tipRadius * 0.12
-    group.add(blob)
-  }
-
-  if (has(show, 'coolant') && visual.coolantHoles > 0) {
-    const holes = Math.min(2, visual.coolantHoles)
-    for (let index = 0; index < holes; index += 1) {
-      const angle = (index / holes) * Math.PI
-      const hole = new THREE.Mesh(
-        new THREE.CylinderGeometry(Math.max(0.12, tipRadius * 0.1), Math.max(0.12, tipRadius * 0.1), fluteEnd - tipZ, 8),
-        metal(HOLE),
-      )
-      hole.rotation.x = -Math.PI / 2
-      hole.position.set(
-        Math.cos(angle) * tipRadius * 0.32,
-        Math.sin(angle) * tipRadius * 0.32,
-        (tipZ + fluteEnd) / 2,
-      )
-      group.add(hole)
-    }
-  }
-
-  if (has(show, 'driver')) {
-    const flat = new THREE.Mesh(new THREE.BoxGeometry(shankRadius * 0.45, shankRadius * 1.7, 7), metal(0x6d7c88))
-    flat.position.set(shankRadius * 0.8, 0, shankEnd - 6)
-    group.add(flat)
-  }
-
-  const metrics: ToolMetrics = { tipZ, tipRadius, fluteStart, fluteEnd, shoulderZ, shankEnd }
-  group.userData.metrics = metrics
   return group
 }
 
@@ -312,6 +118,8 @@ export class GrindScene {
   private groups: THREE.Group[] = []
   private operations: SceneOp[] = []
   private visual: GrindVisual | null = null
+  private drill: DrillParams | null = null
+  private envTex: THREE.Texture | null = null
   private initialShow: GrindStage[] = []
   private progress = 0
   private opCount = 1
@@ -338,11 +146,19 @@ export class GrindScene {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     this.renderer.setSize(width, height)
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping
+    this.renderer.toneMappingExposure = 1.05
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace
     mount.appendChild(this.renderer.domElement)
 
+    const pmrem = new THREE.PMREMGenerator(this.renderer)
+    this.envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    pmrem.dispose()
+    this.scene.environment = this.envTex
+    this.scene.environmentIntensity = 0.72
     this.scene.background = new THREE.Color(0x0e1418)
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.5))
-    const key = new THREE.DirectionalLight(0xffffff, 0.95)
+    this.scene.add(new THREE.AmbientLight(0xdfe7ee, 0.22))
+    const key = new THREE.DirectionalLight(0xfff4e4, 1.25)
     key.position.set(30, 50, 20)
     this.scene.add(key)
     const fill = new THREE.DirectionalLight(0x4ecdc4, 0.28)
@@ -371,7 +187,8 @@ export class GrindScene {
     this.raf = requestAnimationFrame(this.frame)
   }
 
-  setPlan(visual: GrindVisual, initialShow: GrindStage[], operations: SceneOp[]) {
+  setPlan(drill: DrillParams, visual: GrindVisual, initialShow: GrindStage[], operations: SceneOp[]) {
+    this.drill = drill
     this.visual = visual
     this.initialShow = initialShow
     this.operations = operations
@@ -426,16 +243,19 @@ export class GrindScene {
     this.observer?.disconnect()
     this.clearGroups()
     this.wheelMat.dispose()
+    this.envTex?.dispose()
     this.renderer.dispose()
     this.renderer.domElement.remove()
   }
 
   private rebuild() {
-    if (!this.visual) return
+    if (!this.visual || !this.drill) return
     this.clearGroups()
+    const drill = this.drill
+    const visual = this.visual
     const shows = [this.initialShow, ...this.operations.map((op) => op.show)]
     this.groups = shows.map((show) => {
-      const group = buildTool(this.visual as GrindVisual, show)
+      const group = buildTool(drill, visual, show)
       group.visible = false
       this.root.add(group)
       return group

@@ -121,6 +121,7 @@ function DrillGrind({
     const scene = sceneRef.current
     if (!scene) return
     scene.setPlan(
+      drill,
       visual,
       plan.initialShow,
       plan.operations.map((op) => ({
@@ -129,7 +130,7 @@ function DrillGrind({
         abrasive: pack.wheels.find((wheel) => wheel.id === op.wheelId)?.abrasive ?? null,
       })),
     )
-  }, [geometryKey, visual, plan, pack.wheels])
+  }, [drill, geometryKey, visual, plan, pack.wheels])
 
   useEffect(() => {
     sceneRef.current?.setWheels(
