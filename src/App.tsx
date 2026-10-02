@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Designer } from './components/Designer'
 import { Traveler } from './components/Traveler'
 import { ToolRoomHandoff } from './components/ToolRoomHandoff'
+import { GrindSim } from './components/GrindSim'
 import type {
   DrillParams,
   EndmillParams,
@@ -10,8 +11,19 @@ import type {
 } from './lib/types'
 import { createDrill, normalizeDrill } from './lib/drillTypes'
 import { DEFAULT_ENDMILL } from './lib/types'
+import type { GrindMode } from './lib/grindOps'
+import { clampStockMm } from './lib/grindOps'
+import {
+  findPack,
+  loadCustomPacks,
+  readPackChoice,
+  recommendPack,
+  saveCustomPacks,
+  writePackChoice,
+  type WheelPack,
+} from './lib/wheelPacks'
 
-type Tab = 'designer' | 'traveler' | 'handoff'
+type Tab = 'designer' | 'traveler' | 'handoff' | 'grind'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('designer')
@@ -22,6 +34,26 @@ export default function App() {
   const [endmill, setEndmill] = useState<EndmillParams>({ ...DEFAULT_ENDMILL })
   const [drill, setDrill] = useState<DrillParams>(() => createDrill('jobber'))
   const [designId, setDesignId] = useState<string | null>(null)
+  const [grindMode, setGrindMode] = useState<GrindMode>('make')
+  const [stockMm, setStockMm] = useState(0.5)
+  const [customPacks, setCustomPacks] = useState<WheelPack[]>(() => loadCustomPacks())
+  const [packChoice, setPackChoiceState] = useState<string | null>(() => readPackChoice())
+
+  const recommended = useMemo(() => recommendPack(drill), [drill])
+  const pack = useMemo(() => {
+    if (!packChoice) return recommended.pack
+    return findPack(packChoice, customPacks) ?? recommended.pack
+  }, [packChoice, customPacks, recommended])
+
+  const setPackChoice = useCallback((id: string | null) => {
+    setPackChoiceState(id)
+    writePackChoice(id)
+  }, [])
+
+  const updateCustomPacks = useCallback((packs: WheelPack[]) => {
+    setCustomPacks(packs)
+    saveCustomPacks(packs)
+  }, [])
 
   const onCreateTraveler = useCallback((design: SavedDesign) => {
     setSeedDesignId(design.id)
@@ -44,7 +76,7 @@ export default function App() {
           <div className="brand-mark" aria-hidden />
           <div>
             <h1>ANCA TGX Studio</h1>
-            <p className="tagline">Cutting tool designer · Job traveler · ToolRoom handoff</p>
+            <p className="tagline">Cutting tool designer · Grind sim · Job traveler · ToolRoom handoff</p>
           </div>
         </div>
         <nav className="tabs" role="tablist">
@@ -56,6 +88,16 @@ export default function App() {
             onClick={() => setTab('designer')}
           >
             Designer
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'grind'}
+            className={tab === 'grind' ? 'active' : ''}
+            data-testid="tab-grind"
+            onClick={() => setTab('grind')}
+          >
+            Grind sim
           </button>
           <button
             type="button"
@@ -96,12 +138,37 @@ export default function App() {
           />
         )}
         {tab === 'traveler' && (
-          <Traveler seedDesignId={seedDesignId} onConsumedSeed={onConsumedSeed} />
+          <Traveler
+            seedDesignId={seedDesignId}
+            onConsumedSeed={onConsumedSeed}
+            grindMode={grindMode}
+            stockMm={stockMm}
+            pack={pack}
+          />
         )}
         {tab === 'handoff' && (
           <ToolRoomHandoff
             draft={{ toolType, endmill, drill, designId }}
+            grindMode={grindMode}
+            stockMm={stockMm}
+            pack={pack}
             onLoadDesign={loadDesignIntoDraft}
+          />
+        )}
+        {tab === 'grind' && (
+          <GrindSim
+            toolType={toolType}
+            drill={drill}
+            mode={grindMode}
+            setMode={setGrindMode}
+            stockMm={stockMm}
+            setStockMm={(mm) => setStockMm(clampStockMm(mm))}
+            pack={pack}
+            recommended={recommended}
+            packChoice={packChoice && findPack(packChoice, customPacks) ? packChoice : null}
+            setPackChoice={setPackChoice}
+            customPacks={customPacks}
+            setCustomPacks={updateCustomPacks}
           />
         )}
       </div>

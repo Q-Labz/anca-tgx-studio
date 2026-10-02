@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { snapshotFromDesign } from '../lib/designSnapshot'
 import type { DesignSnapshot, JobTraveler, SavedDesign, WheelRow } from '../lib/types'
 import { makeEmptyTraveler, uid } from '../lib/types'
@@ -10,39 +10,56 @@ import {
   saveTraveler,
 } from '../lib/storage'
 import { DISCLAIMER, exportTravelerJson } from '../lib/export'
+import { normalizeDrill } from '../lib/drillTypes'
+import type { GrindMode } from '../lib/grindOps'
+import { buildGrindPlan, travelerOpsFromPlan, travelerWheelsFromPack, type GrindPlan } from '../lib/grindPlan'
+import { GRIND_DISCLAIMER, type WheelPack } from '../lib/wheelPacks'
 
 interface Props {
   seedDesignId?: string | null
   onConsumedSeed?: () => void
+  grindMode: GrindMode
+  stockMm: number
+  pack: WheelPack
 }
 
-export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
+export function Traveler({ seedDesignId, onConsumedSeed, grindMode, stockMm, pack }: Props) {
   const [traveler, setTraveler] = useState<JobTraveler>(() => makeEmptyTraveler())
   const [saved, setSaved] = useState<JobTraveler[]>(() => listTravelers())
   const [designs] = useState<SavedDesign[]>(() => listDesigns())
   const [message, setMessage] = useState<string | null>(null)
   const [printMode, setPrintMode] = useState(false)
 
+  const fieldsFromDesign = useCallback((d: SavedDesign): Partial<JobTraveler> => {
+    const p = d.params as { name: string; diameter: number; overallLength: number; material: string }
+    const common: Partial<JobTraveler> = {
+      designId: d.id,
+      designName: p.name,
+      toolType: d.toolType,
+      blankDiameter: p.diameter,
+      blankLength: p.overallLength + 5,
+      blankMaterial: p.material === 'HSS' ? 'HSS rod' : 'Carbide rod',
+      designSnapshot: snapshotFromDesign(d),
+    }
+    if (d.toolType !== 'drill') return common
+    const linkedPlan = buildGrindPlan(normalizeDrill(d.params), grindMode, pack, stockMm)
+    return {
+      ...common,
+      wheels: travelerWheelsFromPack(pack),
+      ops: travelerOpsFromPlan(linkedPlan),
+    }
+  }, [grindMode, pack, stockMm])
+
   useEffect(() => {
     if (!seedDesignId) return
     const d = getDesign(seedDesignId)
     if (!d) return
-    const p = d.params as { name: string; diameter: number; overallLength: number; material: string }
-    setTraveler(
-      makeEmptyTraveler({
-        designId: d.id,
-        designName: p.name,
-        toolType: d.toolType,
-        blankDiameter: p.diameter,
-        blankLength: p.overallLength + 5,
-        blankMaterial: p.material === 'HSS' ? 'HSS rod' : 'Carbide rod',
-        designSnapshot: snapshotFromDesign(d),
-      }),
-    )
+    const p = d.params as { name: string }
+    setTraveler(makeEmptyTraveler(fieldsFromDesign(d)))
     onConsumedSeed?.()
     setMessage(`Traveler linked to “${p.name}”`)
     setTimeout(() => setMessage(null), 2500)
-  }, [seedDesignId, onConsumedSeed])
+  }, [seedDesignId, onConsumedSeed, fieldsFromDesign])
 
   const refresh = () => setSaved(listTravelers())
 
@@ -92,16 +109,7 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
     }
     const d = getDesign(id)
     if (!d) return
-    const p = d.params as { name: string; diameter: number; overallLength: number; material: string }
-    patch({
-      designId: d.id,
-      designName: p.name,
-      toolType: d.toolType,
-      blankDiameter: p.diameter,
-      blankLength: p.overallLength + 5,
-      blankMaterial: p.material === 'HSS' ? 'HSS rod' : 'Carbide rod',
-      designSnapshot: snapshotFromDesign(d),
-    })
+    patch(fieldsFromDesign(d))
   }
 
   const updateWheel = (id: string, field: keyof WheelRow, value: string) => {
@@ -115,6 +123,12 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
   const linked = traveler.designId ? getDesign(traveler.designId) : undefined
   const snapshot: DesignSnapshot | null =
     traveler.designSnapshot ?? (linked ? snapshotFromDesign(linked) : null)
+  const grindPlan = useMemo(() => {
+    if (!traveler.designId) return null
+    const design = getDesign(traveler.designId)
+    if (!design || design.toolType !== 'drill') return null
+    return buildGrindPlan(normalizeDrill(design.params), grindMode, pack, stockMm)
+  }, [traveler.designId, grindMode, pack, stockMm])
 
   const field = (label: string, control: ReactNode) => (
     <label className="field">
@@ -382,6 +396,47 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
       </aside>
 
       <main className="main-stage">
+        {grindPlan && (
+          <div className="panel" data-testid="traveler-grind-plan">
+            <div className="panel-head">
+              <h2>Simulated grind plan</h2>
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() => {
+                  patch({
+                    wheels: travelerWheelsFromPack(pack),
+                    ops: travelerOpsFromPlan(grindPlan),
+                  })
+                  flash('Copied the simulated grind plan onto this job')
+                }}
+              >
+                Copy into checklist
+              </button>
+            </div>
+            <p className="muted tiny">{GRIND_DISCLAIMER}</p>
+            <p className="muted tiny">
+              {grindPlan.pack.name}
+              {grindPlan.mode === 'resharpen' ? ` · resharpen · ${grindPlan.stockRemovedMm} mm off the tip` : ' · make from blank'}
+            </p>
+            {grindPlan.warnings.length > 0 && (
+              <ul className="grind-warnings">
+                {grindPlan.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            )}
+            <ol className="assign-list">
+              {grindPlan.operations.map((op) => (
+                <li key={op.id}>
+                  <span>{op.title}</span>
+                  <span>{op.wheelName ? `${op.wheelShape} ${op.wheelName}` : 'No wheel'}</span>
+                  <span className="muted">{op.forms}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
         <div className="panel ops-panel">
           <h2>TGX operation checklist</h2>
           <p className="muted">
@@ -452,6 +507,7 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
         <TravelerPrint
           traveler={traveler}
           snapshot={snapshot}
+          grindPlan={grindPlan}
           onClose={() => setPrintMode(false)}
         />
       )}
@@ -462,10 +518,12 @@ export function Traveler({ seedDesignId, onConsumedSeed }: Props) {
 function TravelerPrint({
   traveler,
   snapshot,
+  grindPlan,
   onClose,
 }: {
   traveler: JobTraveler
   snapshot: DesignSnapshot | null
+  grindPlan: GrindPlan | null
   onClose: () => void
 }) {
   return (
@@ -544,6 +602,11 @@ function TravelerPrint({
           </>
         )}
         <h2>Wheel pack</h2>
+        {grindPlan && (
+          <p className="disclaimer">
+            {grindPlan.pack.name}. {GRIND_DISCLAIMER}
+          </p>
+        )}
         <table>
           <thead>
             <tr>
@@ -563,6 +626,19 @@ function TravelerPrint({
           </tbody>
         </table>
         <h2>Operations</h2>
+        {grindPlan && (
+          <>
+            <h2>Simulated grind plan</h2>
+            <ol className="print-ops">
+              {grindPlan.operations.map((op) => (
+                <li key={op.id}>
+                  {op.title} — {op.wheelName ?? 'no wheel'} — forms {op.forms}
+                  {op.warning ? ` — ${op.warning}` : ''}
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
         <ol className="print-ops">
           {traveler.ops.map((op) => (
             <li key={op.id}>

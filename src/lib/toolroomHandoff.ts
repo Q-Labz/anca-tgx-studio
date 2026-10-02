@@ -1,5 +1,6 @@
 import { getDrillType, normalizeDrill } from './drillTypes'
 import type { DrillFieldKey } from './drillTypes'
+import type { GrindPlan } from './grindPlan'
 import type {
   DrillParams,
   EndmillParams,
@@ -44,6 +45,31 @@ export interface ToolRoomHandoffPayload {
   /** Ordered rows for UI / print */
   mapping: HandoffFieldRow[]
   notes: string[]
+  /**
+   * Educational grind sequence for a drill. Omitted for endmills and when the
+   * studio has no wheel pack selected. Not ToolRoom’s wheel library.
+   */
+  grindPlan?: HandoffGrindPlan
+}
+
+export interface HandoffGrindWheel {
+  id: string
+  name: string
+  shape: string
+  diameterMm: number
+  widthMm: number
+  abrasive: string
+  grit: string
+  duties: string[]
+}
+
+export interface HandoffGrindPlan {
+  disclaimer: string
+  mode: 'make' | 'resharpen'
+  stockRemovedMm: number | null
+  pack: { id: string; name: string; wheels: HandoffGrindWheel[] }
+  operations: { id: string; title: string; wheelName: string | null; forms: string }[]
+  warnings: string[]
 }
 
 function fmt(v: string | number | null | undefined, empty = '—'): string {
@@ -408,10 +434,40 @@ export function buildHandoffMapping(
     : buildDrillMapping(params as DrillParams)
 }
 
+function handoffGrindPlan(plan: GrindPlan): HandoffGrindPlan {
+  return {
+    disclaimer: plan.disclaimer,
+    mode: plan.mode,
+    stockRemovedMm: plan.stockRemovedMm,
+    pack: {
+      id: plan.pack.id,
+      name: plan.pack.name,
+      wheels: plan.pack.wheels.map((wheel) => ({
+        id: wheel.id,
+        name: wheel.name,
+        shape: wheel.shape,
+        diameterMm: wheel.diameterMm,
+        widthMm: wheel.widthMm,
+        abrasive: wheel.abrasive,
+        grit: wheel.grit,
+        duties: [...wheel.duties],
+      })),
+    },
+    operations: plan.operations.map((op) => ({
+      id: op.id,
+      title: op.title,
+      wheelName: op.wheelName,
+      forms: op.forms,
+    })),
+    warnings: [...plan.warnings],
+  }
+}
+
 export function buildHandoffPayload(
   toolType: ToolType,
   params: EndmillParams | DrillParams,
   designId: string | null = null,
+  grindPlan: GrindPlan | null = null,
 ): ToolRoomHandoffPayload {
   const mapping = buildHandoffMapping(toolType, params)
   const fields: Record<string, string | number | null> = { toolType }
@@ -424,6 +480,8 @@ export function buildHandoffPayload(
     const raw = bag[row.studioKey]
     fields[row.studioKey] = typeof raw === 'string' || typeof raw === 'number' ? raw : null
   }
+
+  const attached = toolType === 'drill' && grindPlan ? handoffGrindPlan(grindPlan) : undefined
 
   return {
     schema: HANDOFF_SCHEMA,
@@ -444,7 +502,13 @@ export function buildHandoffPayload(
             'drillType is the studio drill family (jobber, stub, step, gun, and so on). Step diameters are step1Diameter / step1Length. ToolRoom still creates the .TOM.',
           ]
         : []),
+      ...(attached
+        ? [
+            'The grindPlan block is an educational approximation from this studio. It is not ToolRoom’s wheel library, not a wheel speed or feed, and not a .TOM.',
+          ]
+        : []),
     ],
+    ...(attached ? { grindPlan: attached } : {}),
   }
 }
 
