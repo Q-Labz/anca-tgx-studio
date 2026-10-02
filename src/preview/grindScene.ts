@@ -147,7 +147,7 @@ export class GrindScene {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     this.renderer.setSize(width, height)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.05
+    this.renderer.toneMappingExposure = 1.0
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     mount.appendChild(this.renderer.domElement)
 
@@ -155,10 +155,10 @@ export class GrindScene {
     this.envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
     pmrem.dispose()
     this.scene.environment = this.envTex
-    this.scene.environmentIntensity = 0.72
+    this.scene.environmentIntensity = 0.34
     this.scene.background = new THREE.Color(0x0e1418)
-    this.scene.add(new THREE.AmbientLight(0xdfe7ee, 0.22))
-    const key = new THREE.DirectionalLight(0xfff4e4, 1.25)
+    this.scene.add(new THREE.AmbientLight(0xe4ebf1, 0.34))
+    const key = new THREE.DirectionalLight(0xfff6ec, 0.78)
     key.position.set(30, 50, 20)
     this.scene.add(key)
     const fill = new THREE.DirectionalLight(0x4ecdc4, 0.28)
