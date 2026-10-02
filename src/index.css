@@ -6,10 +6,10 @@
   --border-soft: #1c2832;
   --text: #e6edf2;
   --muted: #8a9ba8;
-  --petrol: #1a6b6b;
-  --petrol-bright: #2a9d8f;
+  --petrol: #0e7490;
+  --petrol-bright: #22d3ee;
   --steel: #6b7c8a;
-  --accent: #3db8a8;
+  --accent: #06b6d4;
   --danger: #c45c5c;
   --warn: #c9a227;
   --radius: 8px;
@@ -73,6 +73,23 @@ button {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.brand-home {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand-kicker {
+  margin: 0 0 0.1rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--petrol-bright);
+  font-weight: 650;
 }
 
 .brand-mark {

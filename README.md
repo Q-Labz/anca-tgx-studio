@@ -1,7 +1,9 @@
-# ANCA TGX Studio
+# TGX Studio
 
-Browser app for **cutting tool design**, **TGX job travelers**, and **ToolRoom handoff**.  
+YPT cutting-tool designer for [yptgrind.com](https://yptgrind.com) — **TGX job travelers** and **ToolRoom handoff**.  
 Exports human/machine-friendly parameters for ToolRoom / TGX setup — **not** proprietary ANCA TOM / ToolRoom binary files.
+
+Production path on the main site: **https://yptgrind.com/studio/**
 
 > **For ToolRoom / TGX setup — not a TOM file.**  
 > **ToolRoom creates the .TOM. This app does not write TOM files. Verify in CIM3D before grinding.**
