@@ -222,8 +222,9 @@ function gunRadius(
   const sector = TAU / count
   const local = wrapAngle(theta) % sector
   const mid = sector / 2
-  const half = sector * (vShape ? 0.2 : 0.32)
-  const margin = Math.min(sector * 0.1, 0.22)
+  // One straight groove in a solid bar. The rest of the circle stays on the pads.
+  const half = sector * (vShape ? 0.11 : 0.16)
+  const margin = Math.min(sector * 0.08, 0.2)
   const d = Math.abs(local - mid)
   if (d > half) {
     const fromLip = d - half
@@ -235,6 +236,11 @@ function gunRadius(
   return Math.max(floor, mix(outer, floor, shape * open))
 }
 
+/**
+ * Radius through the part of one flute sector that is not the primary margin.
+ * A short lip drops into a circular gullet, then the heel stays on the body
+ * diameter. Most of the bar remains solid; the gullet is a groove, not a gap.
+ */
 function gulletRadius(
   u: number,
   outer: number,
@@ -243,25 +249,23 @@ function gulletRadius(
   clearance: number,
   wide: boolean,
 ): number {
-  const flankEnd = wide ? 0.06 : 0.08
-  const fluteEnd = wide ? 0.9 : 0.8
-  const heel = wide ? 0.96 : 0.9
-  const body = outer - clearance
-  if (u < flankEnd) {
-    const t = u / Math.max(flankEnd, 1e-4)
-    return outer - clearance * t * t
+  const body = Math.max(web, outer - clearance)
+  const lip = wide ? 0.04 : 0.05
+  const bowlEnd = wide ? 0.64 : 0.5
+  if (u < lip) {
+    return mix(outer, body, smoothstep(u / Math.max(lip, 1e-4)))
   }
-  if (u <= fluteEnd) {
-    const t = (u - flankEnd) / Math.max(fluteEnd - flankEnd, 1e-4)
-    const dip = Math.sin(t * Math.PI) ** (wide ? 0.65 : 0.82)
-    return Math.max(web, mix(body, mix(outer * 0.88, web, open), dip))
+  if (u <= bowlEnd) {
+    const t = (u - lip) / Math.max(bowlEnd - lip, 1e-4)
+    const bowl = Math.sin(Math.PI * t)
+    const floor = mix(body, web, open)
+    return Math.max(web, mix(body, floor, bowl))
   }
-  if (u < heel) {
-    const t = smoothstep((u - fluteEnd) / Math.max(heel - fluteEnd, 1e-4))
-    return mix(mix(body, web, 0.1), body, t)
+  const tail = 0.05
+  if (u > 1 - tail) {
+    return mix(body, outer, smoothstep((u - (1 - tail)) / tail))
   }
-  const t = smoothstep((u - heel) / Math.max(1 - heel, 1e-4))
-  return mix(body, outer, t)
+  return body
 }
 
 /**
@@ -343,14 +347,14 @@ export function spanRadius(z: number, z0: number, z1: number, r0: number, r1: nu
 
 export function coatingHex(coating: string, material: 'carbide' | 'HSS'): number {
   const name = coating.trim().toLowerCase()
-  if (name.includes('ticn')) return 0x6e5640
-  if (name.includes('altin') || name.includes('tialn') || name.includes('alcrn')) return 0x2c2a34
-  if (name.includes('tin')) return 0xe1b33a
-  if (name.includes('diamond') || name.includes('dlc') || name.includes('amorphous')) return 0x1c1c20
+  if (name.includes('ticn')) return 0x8d7d66
+  if (name.includes('altin') || name.includes('tialn') || name.includes('alcrn')) return 0x6f6a82
+  if (name.includes('tin')) return 0xc4a15c
+  if (name.includes('diamond') || name.includes('dlc') || name.includes('amorphous')) return 0x3c3e44
   if (name.includes('uncoated') || name.includes('none') || name === '') {
-    return material === 'carbide' ? 0xc8cdd3 : 0xc4a45a
+    return material === 'carbide' ? 0xb7bdc3 : 0xb5a06e
   }
-  return material === 'carbide' ? 0xc8cdd3 : 0xc4a45a
+  return material === 'carbide' ? 0xb7bdc3 : 0xb5a06e
 }
 
 export interface CoatingLook {
@@ -363,18 +367,18 @@ export interface CoatingLook {
 export function coatingLook(coating: string): CoatingLook {
   const name = coating.trim().toLowerCase()
   if (name.includes('tin') && !name.includes('altin') && !name.includes('tialn') && !name.includes('ticn')) {
-    return { roughness: 0.16, clearcoat: 0.55, clearcoatRoughness: 0.16, metalness: 0.98 }
+    return { roughness: 0.5, clearcoat: 0.04, clearcoatRoughness: 0.62, metalness: 0.52 }
   }
   if (name.includes('altin') || name.includes('tialn') || name.includes('alcrn')) {
-    return { roughness: 0.28, clearcoat: 0.32, clearcoatRoughness: 0.28, metalness: 0.96 }
+    return { roughness: 0.55, clearcoat: 0.02, clearcoatRoughness: 0.7, metalness: 0.46 }
   }
   if (name.includes('diamond') || name.includes('dlc') || name.includes('amorphous')) {
-    return { roughness: 0.2, clearcoat: 0.68, clearcoatRoughness: 0.12, metalness: 0.9 }
+    return { roughness: 0.38, clearcoat: 0.1, clearcoatRoughness: 0.4, metalness: 0.38 }
   }
   if (name.includes('ticn')) {
-    return { roughness: 0.22, clearcoat: 0.4, clearcoatRoughness: 0.22, metalness: 0.96 }
+    return { roughness: 0.52, clearcoat: 0.03, clearcoatRoughness: 0.65, metalness: 0.48 }
   }
-  return { roughness: 0.24, clearcoat: 0.22, clearcoatRoughness: 0.32, metalness: 0.94 }
+  return { roughness: 0.62, clearcoat: 0, clearcoatRoughness: 0.8, metalness: 0.4 }
 }
 
 function familyOf(drill: DrillParams): FluteFamily {

@@ -33,6 +33,14 @@ describe('helical flute profile', () => {
     }
     expect(min).toBeLessThan(outer * 0.55)
     expect(stationRadius(1.2, 2, outer, web, 0.08, 0, 'twist', 0.2)).toBeCloseTo(outer, 5)
+
+    let nearOd = 0
+    const samples = 96
+    for (let step = 0; step < samples; step++) {
+      const radius = stationRadius((step / samples) * Math.PI * 2, 2, outer, web, 0.08, 1, 'twist', 0.05)
+      if (radius > outer * 0.9) nearOd += 1
+    }
+    expect(nearOd).toBeGreaterThan(samples * 0.5)
   })
 
   it('gives a gun drill one deep straight flute and a double margin two lands', () => {
