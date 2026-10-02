@@ -40,11 +40,14 @@ export default function App() {
     <div className="app">
       <header className="app-header no-print">
         <div className="brand">
-          <div className="brand-mark" aria-hidden />
-          <div>
-            <h1>ANCA TGX Studio</h1>
-            <p className="tagline">Cutting tool designer · Job traveler · ToolRoom handoff</p>
-          </div>
+          <a className="brand-home" href="https://yptgrind.com" target="_blank" rel="noreferrer">
+            <div className="brand-mark" aria-hidden />
+            <div>
+              <p className="brand-kicker">Young&apos;s Precision · yptgrind.com</p>
+              <h1>TGX Studio</h1>
+              <p className="tagline">Cutting tool designer · Job traveler · ToolRoom handoff</p>
+            </div>
+          </a>
         </div>
         <nav className="tabs" role="tablist">
           <button
