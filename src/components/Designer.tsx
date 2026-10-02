@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import type {
   DrillParams,
   EndmillParams,
@@ -6,14 +6,25 @@ import type {
   ToolMaterial,
   ToolType,
 } from '../lib/types'
+import { DEFAULT_ENDMILL, uid } from '../lib/types'
+import { createDrill, getDrillType, normalizeDrill } from '../lib/drillTypes'
 import {
-  DEFAULT_DRILL,
-  DEFAULT_ENDMILL,
-  uid,
-} from '../lib/types'
+  adoptType,
+  adviseDrill,
+  readExperienceMode,
+  workpieceLabel,
+  writeExperienceMode,
+  type ExperienceMode,
+  type PreviewPart,
+  type StarterTemplate,
+  type WorkpieceMaterial,
+} from '../lib/drillGuide'
+import { snapshotFromDesign } from '../lib/designSnapshot'
 import { deleteDesign, listDesigns, saveDesign } from '../lib/storage'
 import { validateTool } from '../lib/validation'
 import { DISCLAIMER, exportDesignCsv, exportDesignJson } from '../lib/export'
+import { DrillFields, DrillLibrary, DrillTypeCards } from './DrillForm'
+import { DrillWizard } from './DrillWizard'
 import { ToolPreview } from './ToolPreview'
 
 interface Props {
@@ -42,10 +53,62 @@ export function Designer({
   const [designs, setDesigns] = useState<SavedDesign[]>(() => listDesigns())
   const [message, setMessage] = useState<string | null>(null)
   const [showSetupSheet, setShowSetupSheet] = useState(false)
+  const [mode, setMode] = useState<ExperienceMode>(() => readExperienceMode())
+  const [workpiece, setWorkpiece] = useState<WorkpieceMaterial | null>(null)
+  const [highlight, setHighlight] = useState<PreviewPart | null>(null)
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const stashRef = useRef<{ drill: DrillParams; workpiece: WorkpieceMaterial | null } | null>(null)
+  const openAdvanced = useCallback(() => setShowAdvanced(true), [])
 
   const params = toolType === 'endmill' ? endmill : drill
   const errors = useMemo(() => validateTool(toolType, params), [toolType, params])
   const valid = Object.keys(errors).length === 0
+  const advisories = useMemo(
+    () => (toolType === 'drill' ? adviseDrill(drill, workpiece) : []),
+    [toolType, drill, workpiece],
+  )
+
+  const changeMode = (next: ExperienceMode) => {
+    setMode(next)
+    writeExperienceMode(next)
+    if (next === 'expert') setShowAdvanced(false)
+  }
+
+  const openWizard = () => {
+    stashRef.current = { drill, workpiece }
+    setWizardOpen(true)
+  }
+
+  const cancelWizard = () => {
+    const stash = stashRef.current
+    if (stash) {
+      setDrill(stash.drill)
+      setWorkpiece(stash.workpiece)
+    }
+    setWizardOpen(false)
+  }
+
+  const acceptWizard = (next: DrillParams, material: WorkpieceMaterial) => {
+    setDrill(next)
+    setWorkpiece(material)
+    setDesignId(null)
+    setWizardOpen(false)
+    setShowAdvanced(false)
+    flash(`Using ${getDrillType(next.drillType).shortLabel}`)
+  }
+
+  const applyTemplate = (template: StarterTemplate) => {
+    setDrill({
+      ...template.drill,
+      steps: template.drill.steps.map((step) => ({ ...step })),
+    })
+    setWorkpiece(template.workpiece)
+    setDesignId(null)
+    setShowAdvanced(false)
+    setWizardOpen(false)
+    flash(`Loaded “${template.title}”`)
+  }
 
   const refresh = () => setDesigns(listDesigns())
 
@@ -81,7 +144,9 @@ export function Designer({
     setToolType(d.toolType)
     setDesignId(d.id)
     if (d.toolType === 'endmill') setEndmill(d.params as EndmillParams)
-    else setDrill(d.params as DrillParams)
+    else setDrill(normalizeDrill(d.params))
+    setWorkpiece(null)
+    setWizardOpen(false)
     flash(`Loaded “${(d.params as { name: string }).name}”`)
   }
 
@@ -94,8 +159,10 @@ export function Designer({
 
   const handleNew = () => {
     setDesignId(null)
+    setWorkpiece(null)
+    setWizardOpen(false)
     if (toolType === 'endmill') setEndmill({ ...DEFAULT_ENDMILL })
-    else setDrill({ ...DEFAULT_DRILL })
+    else setDrill(createDrill(drill.drillType))
     flash('New design')
   }
 
@@ -177,186 +244,173 @@ export function Designer({
           <p className="hint muted">Reamer stub reserved for later.</p>
         </div>
 
+        {toolType === 'drill' && wizardOpen && (
+          <DrillWizard onCancel={cancelWizard} onPreview={(next, material) => {
+            setDrill(next)
+            setWorkpiece(material)
+          }} onAccept={acceptWizard} />
+        )}
+
+        {toolType === 'drill' && !wizardOpen && (
+          <DrillLibrary
+            drill={drill}
+            setDrill={(next) => {
+              setDrill(next)
+              setShowAdvanced(false)
+            }}
+            mode={mode}
+            onMode={changeMode}
+            onTemplate={applyTemplate}
+            onHelp={openWizard}
+          />
+        )}
+
+        {!wizardOpen && (
         <div className="panel form-panel">
           <h2>Parameters</h2>
+          {toolType === 'drill' && workpiece && (
+            <p className="hint">
+              Workpiece: {workpieceLabel(workpiece)}{' '}
+              <button type="button" className="btn ghost sm" onClick={() => setWorkpiece(null)}>
+                Clear
+              </button>
+            </p>
+          )}
           <div className="form-grid">
-            {field(
-              'name',
-              'Name',
-              <input
-                type="text"
-                value={params.name}
-                onChange={(e) =>
-                  toolType === 'endmill'
-                    ? setEndmill({ ...endmill, name: e.target.value })
-                    : setDrill({ ...drill, name: e.target.value })
-                }
-              />,
-            )}
-            {field(
-              'diameter',
-              'Diameter (mm)',
-              num(params.diameter, (n) =>
-                toolType === 'endmill'
-                  ? setEndmill({ ...endmill, diameter: n ?? 0 })
-                  : setDrill({ ...drill, diameter: n ?? 0 }),
-              ),
-            )}
-            {field(
-              'fluteCount',
-              'Flute count',
-              <input
-                type="number"
-                min={toolType === 'endmill' ? 2 : 2}
-                max={toolType === 'endmill' ? 8 : 3}
-                step={1}
-                value={params.fluteCount}
-                onChange={(e) => {
-                  const n = Number(e.target.value)
-                  toolType === 'endmill'
-                    ? setEndmill({ ...endmill, fluteCount: n })
-                    : setDrill({ ...drill, fluteCount: n })
-                }}
-              />,
-            )}
-            {toolType === 'endmill' &&
-              field(
-                'helixAngle',
-                'Helix angle (°)',
-                num(endmill.helixAngle, (n) =>
-                  setEndmill({ ...endmill, helixAngle: n ?? 0 }),
-                ),
-              )}
-            {toolType === 'drill' &&
-              field(
-                'pointAngle',
-                'Point angle (°)',
-                <div className="inline-row">
-                  {num(drill.pointAngle, (n) =>
-                    setDrill({ ...drill, pointAngle: n ?? 118 }),
-                  )}
-                  <div className="chip-row">
-                    {[118, 135].map((a) => (
-                      <button
-                        key={a}
-                        type="button"
-                        className={`chip ${drill.pointAngle === a ? 'active' : ''}`}
-                        onClick={() => setDrill({ ...drill, pointAngle: a })}
-                      >
-                        {a}°
-                      </button>
-                    ))}
-                  </div>
-                </div>,
-              )}
-            {field(
-              'overallLength',
-              'Overall length (mm)',
-              num(params.overallLength, (n) =>
-                toolType === 'endmill'
-                  ? setEndmill({ ...endmill, overallLength: n ?? 0 })
-                  : setDrill({ ...drill, overallLength: n ?? 0 }),
-              ),
-            )}
-            {field(
-              'fluteLength',
-              'Flute length (mm)',
-              num(params.fluteLength, (n) =>
-                toolType === 'endmill'
-                  ? setEndmill({ ...endmill, fluteLength: n ?? 0 })
-                  : setDrill({ ...drill, fluteLength: n ?? 0 }),
-              ),
-            )}
-            {field(
-              'shankDiameter',
-              'Shank diameter (mm)',
-              num(params.shankDiameter, (n) =>
-                toolType === 'endmill'
-                  ? setEndmill({ ...endmill, shankDiameter: n ?? 0 })
-                  : setDrill({ ...drill, shankDiameter: n ?? 0 }),
-              ),
-            )}
-            {field(
-              'shankLength',
-              'Shank length (mm)',
-              num(params.shankLength, (n) =>
-                toolType === 'endmill'
-                  ? setEndmill({ ...endmill, shankLength: n ?? 0 })
-                  : setDrill({ ...drill, shankLength: n ?? 0 }),
-              ),
-            )}
-            {toolType === 'endmill' && (
+            {toolType === 'drill' ? (
+              <DrillFields
+                drill={drill}
+                setDrill={setDrill}
+                errors={errors}
+                mode={mode}
+                showAdvanced={showAdvanced}
+                onShowAdvanced={openAdvanced}
+                onHighlight={setHighlight}
+              />
+            ) : (
               <>
+                {field(
+                  'name',
+                  'Name',
+                  <input
+                    type="text"
+                    value={endmill.name}
+                    onChange={(e) => setEndmill({ ...endmill, name: e.target.value })}
+                  />,
+                )}
+                {field(
+                  'diameter',
+                  'Diameter (mm)',
+                  num(endmill.diameter, (n) => setEndmill({ ...endmill, diameter: n ?? 0 })),
+                )}
+                {field(
+                  'fluteCount',
+                  'Flute count',
+                  <input
+                    type="number"
+                    min={2}
+                    max={8}
+                    step={1}
+                    value={endmill.fluteCount}
+                    onChange={(e) => setEndmill({ ...endmill, fluteCount: Number(e.target.value) })}
+                  />,
+                )}
+                {field(
+                  'helixAngle',
+                  'Helix angle (°)',
+                  num(endmill.helixAngle, (n) => setEndmill({ ...endmill, helixAngle: n ?? 0 })),
+                )}
+                {field(
+                  'overallLength',
+                  'Overall length (mm)',
+                  num(endmill.overallLength, (n) => setEndmill({ ...endmill, overallLength: n ?? 0 })),
+                )}
+                {field(
+                  'fluteLength',
+                  'Flute length (mm)',
+                  num(endmill.fluteLength, (n) => setEndmill({ ...endmill, fluteLength: n ?? 0 })),
+                )}
+                {field(
+                  'shankDiameter',
+                  'Shank diameter (mm)',
+                  num(endmill.shankDiameter, (n) => setEndmill({ ...endmill, shankDiameter: n ?? 0 })),
+                )}
+                {field(
+                  'shankLength',
+                  'Shank length (mm)',
+                  num(endmill.shankLength, (n) => setEndmill({ ...endmill, shankLength: n ?? 0 })),
+                )}
                 {field(
                   'cornerRadius',
                   'Corner radius (mm, 0 = square)',
-                  num(endmill.cornerRadius, (n) =>
-                    setEndmill({ ...endmill, cornerRadius: n ?? 0 }),
-                  ),
+                  num(endmill.cornerRadius, (n) => setEndmill({ ...endmill, cornerRadius: n ?? 0 })),
                 )}
                 {field(
                   'neckDiameter',
                   'Neck diameter (optional)',
-                  num(
-                    endmill.neckDiameter,
-                    (n) => setEndmill({ ...endmill, neckDiameter: n }),
-                    { nullable: true },
-                  ),
+                  num(endmill.neckDiameter, (n) => setEndmill({ ...endmill, neckDiameter: n }), {
+                    nullable: true,
+                  }),
                 )}
                 {field(
                   'neckLength',
                   'Neck length (optional)',
-                  num(
-                    endmill.neckLength,
-                    (n) => setEndmill({ ...endmill, neckLength: n }),
-                    { nullable: true },
-                  ),
+                  num(endmill.neckLength, (n) => setEndmill({ ...endmill, neckLength: n }), {
+                    nullable: true,
+                  }),
+                )}
+                {field(
+                  'coating',
+                  'Coating',
+                  <input
+                    type="text"
+                    value={endmill.coating}
+                    onChange={(e) => setEndmill({ ...endmill, coating: e.target.value })}
+                  />,
+                )}
+                {field(
+                  'material',
+                  'Material',
+                  <select
+                    value={endmill.material}
+                    onChange={(e) => setEndmill({ ...endmill, material: e.target.value as ToolMaterial })}
+                  >
+                    <option value="carbide">Carbide</option>
+                    <option value="HSS">HSS</option>
+                  </select>,
                 )}
               </>
             )}
-            {toolType === 'drill' &&
-              field(
-                'webThinningNote',
-                'Web thinning note',
-                <input
-                  type="text"
-                  value={drill.webThinningNote}
-                  placeholder="e.g. split point / thinned"
-                  onChange={(e) =>
-                    setDrill({ ...drill, webThinningNote: e.target.value })
-                  }
-                />,
-              )}
-            {field(
-              'coating',
-              'Coating',
-              <input
-                type="text"
-                value={params.coating}
-                onChange={(e) =>
-                  toolType === 'endmill'
-                    ? setEndmill({ ...endmill, coating: e.target.value })
-                    : setDrill({ ...drill, coating: e.target.value })
-                }
-              />,
-            )}
-            {field(
-              'material',
-              'Material',
-              <select
-                value={params.material}
-                onChange={(e) => {
-                  const m = e.target.value as ToolMaterial
-                  toolType === 'endmill'
-                    ? setEndmill({ ...endmill, material: m })
-                    : setDrill({ ...drill, material: m })
-                }}
-              >
-                <option value="carbide">Carbide</option>
-                <option value="HSS">HSS</option>
-              </select>,
-            )}
           </div>
+
+          {toolType === 'drill' && advisories.length > 0 && (
+            <div className="advisory-list">
+              <h3>Suggestions</h3>
+              <p className="muted tiny">You can still save. These are shop cautions, separate from the red errors.</p>
+              <ul>
+                {advisories.map((item) => {
+                  const adopted = item.adopt ? adoptType(drill, item.adopt) : null
+                  return (
+                    <li key={item.id}>
+                      <p>{item.message}</p>
+                      {adopted && item.adopt && (
+                        <button
+                          type="button"
+                          className="btn sm"
+                          onClick={() => {
+                            setDrill(adopted)
+                            setDesignId(null)
+                          }}
+                        >
+                          Use {getDrillType(item.adopt).shortLabel}
+                        </button>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
 
           <div className="btn-row wrap">
             <button type="button" className="btn primary" onClick={handleSave}>
@@ -402,6 +456,17 @@ export function Designer({
           <p className="disclaimer">{DISCLAIMER}</p>
           {message && <p className="toast">{message}</p>}
         </div>
+        )}
+
+        {toolType === 'drill' && !wizardOpen && mode === 'beginner' && (
+          <DrillTypeCards
+            drill={drill}
+            setDrill={(next) => {
+              setDrill(next)
+              setShowAdvanced(false)
+            }}
+          />
+        )}
 
         <div className="panel">
           <h2>Saved designs</h2>
@@ -413,7 +478,11 @@ export function Designer({
               <li key={d.id} className="list-item">
                 <div>
                   <strong>{(d.params as { name: string }).name}</strong>
-                  <span className="tag">{d.toolType}</span>
+                  <span className="tag">
+                    {d.toolType === 'drill'
+                      ? getDrillType(normalizeDrill(d.params).drillType).shortLabel
+                      : d.toolType}
+                  </span>
                   <div className="muted tiny">
                     ⌀{(d.params as { diameter: number }).diameter} mm ·{' '}
                     {(d.params as { fluteCount: number }).fluteCount}F
@@ -438,7 +507,7 @@ export function Designer({
       </aside>
 
       <main className="main-stage">
-        <ToolPreview toolType={toolType} params={params} />
+        <ToolPreview toolType={toolType} params={params} highlight={toolType === 'drill' ? highlight : null} />
       </main>
 
       {showSetupSheet && (
@@ -476,20 +545,20 @@ function SetupSheet({
         </header>
         <table>
           <tbody>
-            <tr>
-              <th>Name</th>
-              <td>{p.name}</td>
-              <th>Type</th>
-              <td>{design.toolType}</td>
-            </tr>
-            <tr>
-              <th>Diameter</th>
-              <td>{p.diameter} mm</td>
-              <th>Flutes</th>
-              <td>{p.fluteCount}</td>
-            </tr>
             {design.toolType === 'endmill' ? (
               <>
+                <tr>
+                  <th>Name</th>
+                  <td>{p.name}</td>
+                  <th>Type</th>
+                  <td>endmill</td>
+                </tr>
+                <tr>
+                  <th>Diameter</th>
+                  <td>{p.diameter} mm</td>
+                  <th>Flutes</th>
+                  <td>{p.fluteCount}</td>
+                </tr>
                 <tr>
                   <th>Helix</th>
                   <td>{(design.params as EndmillParams).helixAngle}°</td>
@@ -503,33 +572,31 @@ function SetupSheet({
                     {(design.params as EndmillParams).neckLength ?? '—'} mm
                   </td>
                 </tr>
-              </>
-            ) : (
-              <>
                 <tr>
-                  <th>Point angle</th>
-                  <td>{(design.params as DrillParams).pointAngle}°</td>
-                  <th>Web thinning</th>
-                  <td>{(design.params as DrillParams).webThinningNote || '—'}</td>
+                  <th>OAL</th>
+                  <td>{p.overallLength} mm</td>
+                  <th>Flute length</th>
+                  <td>{p.fluteLength} mm</td>
+                </tr>
+                <tr>
+                  <th>Shank ⌀ / L</th>
+                  <td>
+                    {p.shankDiameter} × {p.shankLength} mm
+                  </td>
+                  <th>Material / coat</th>
+                  <td>
+                    {p.material} / {p.coating || '—'}
+                  </td>
                 </tr>
               </>
+            ) : (
+              snapshotFromDesign(design).lines.map((line) => (
+                <tr key={line.label}>
+                  <th>{line.label}</th>
+                  <td colSpan={3}>{line.value}</td>
+                </tr>
+              ))
             )}
-            <tr>
-              <th>OAL</th>
-              <td>{p.overallLength} mm</td>
-              <th>Flute length</th>
-              <td>{p.fluteLength} mm</td>
-            </tr>
-            <tr>
-              <th>Shank ⌀ / L</th>
-              <td>
-                {p.shankDiameter} × {p.shankLength} mm
-              </td>
-              <th>Material / coat</th>
-              <td>
-                {p.material} / {p.coating || '—'}
-              </td>
-            </tr>
           </tbody>
         </table>
         <footer>

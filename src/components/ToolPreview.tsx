@@ -1,245 +1,206 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+import { drillCaption, normalizeDrill } from '../lib/drillTypes'
+import { previewPartLabel, type PreviewPart } from '../lib/drillGuide'
+import { buildDrillMesh, buildEndmillMesh } from '../preview/realisticDrill'
 import type { DrillParams, EndmillParams, ToolType } from '../lib/types'
 
 interface Props {
   toolType: ToolType
   params: EndmillParams | DrillParams
+  highlight?: PreviewPart | null
 }
 
-const STEEL = 0x8a9ba8
-const CARBIDE = 0xc5ccd3
-const FLUTE = 0x6b7a86
-const ACCENT = 0x2a9d8f
+function meshParts(obj: THREE.Object3D): PreviewPart[] {
+  const list = obj.userData.parts
+  if (Array.isArray(list)) return list as PreviewPart[]
+  const one = obj.userData.part
+  return typeof one === 'string' ? [one as PreviewPart] : []
+}
 
-export function ToolPreview({ toolType, params }: Props) {
+function applyPreviewHighlight(group: THREE.Group, part: PreviewPart | null) {
+  group.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return
+    const base = obj.userData.baseMaterial as THREE.Material | undefined
+    if (!base) return
+    const parts = meshParts(obj)
+    if (part && parts.includes(part)) {
+      let highlightMat = obj.userData.highlightMaterial as THREE.MeshStandardMaterial | undefined
+      if (!highlightMat && base instanceof THREE.MeshStandardMaterial) {
+        highlightMat = base.clone()
+        highlightMat.color = new THREE.Color(0x14786f)
+        highlightMat.emissive = new THREE.Color(0x7dffe8)
+        highlightMat.emissiveIntensity = 1.4
+        highlightMat.metalness = 0.15
+        highlightMat.roughness = 0.35
+        obj.userData.highlightMaterial = highlightMat
+      }
+      if (highlightMat) obj.material = highlightMat
+    } else {
+      obj.material = base
+    }
+  })
+}
+
+const PREVIEW_SCALE = 0.12
+
+export function ToolPreview({ toolType, params, highlight = null }: Props) {
   const mountRef = useRef<HTMLDivElement>(null)
+  const groupRef = useRef<THREE.Group | null>(null)
+  const highlightRef = useRef(highlight)
 
   useEffect(() => {
     const mount = mountRef.current
     if (!mount) return
 
-    const w = mount.clientWidth || 400
-    const h = mount.clientHeight || 360
-
+    const width = mount.clientWidth || 400
+    const height = mount.clientHeight || 360
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x0e1418)
+    scene.background = new THREE.Color(0x070b0e)
 
-    const camera = new THREE.PerspectiveCamera(40, w / h, 0.1, 1000)
+    const camera = new THREE.PerspectiveCamera(32, width / height, 0.1, 1000)
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    renderer.setSize(w, h)
+    renderer.setSize(width, height)
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.02
+    renderer.outputColorSpace = THREE.SRGBColorSpace
     mount.appendChild(renderer.domElement)
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.45)
-    scene.add(ambient)
-    const key = new THREE.DirectionalLight(0xffffff, 0.9)
-    key.position.set(40, 60, 40)
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    const envTex = pmrem.fromScene(new RoomEnvironment(), 0.035).texture
+    scene.environment = envTex
+    scene.environmentIntensity = 0.32
+    scene.add(new THREE.AmbientLight(0xe4ebf1, 0.32))
+    const key = new THREE.DirectionalLight(0xfff6ec, 0.82)
+    key.position.set(28, 62, 22)
     scene.add(key)
-    const fill = new THREE.DirectionalLight(0x4ecdc4, 0.25)
-    fill.position.set(-30, 20, -20)
+    const fill = new THREE.DirectionalLight(0xb7cddd, 0.28)
+    fill.position.set(-48, 18, -10)
     scene.add(fill)
+    const rim = new THREE.DirectionalLight(0xf4f7fb, 0.2)
+    rim.position.set(-6, 18, -56)
+    scene.add(rim)
 
     const group = new THREE.Group()
+    groupRef.current = group
     scene.add(group)
 
-    const matShank = new THREE.MeshStandardMaterial({
-      color: STEEL,
-      metalness: 0.85,
-      roughness: 0.35,
-    })
-    const matCutting = new THREE.MeshStandardMaterial({
-      color: params.material === 'carbide' ? CARBIDE : 0xb8a070,
-      metalness: 0.7,
-      roughness: 0.4,
-    })
-    const matFlute = new THREE.MeshStandardMaterial({
-      color: FLUTE,
-      metalness: 0.6,
-      roughness: 0.45,
-    })
-    const matTip = new THREE.MeshStandardMaterial({
-      color: ACCENT,
-      metalness: 0.5,
-      roughness: 0.35,
-    })
-
-    const scale = 0.12
-    const dia = Math.max(params.diameter, 0.5) * scale
-    const shankDia = Math.max(params.shankDiameter, 0.5) * scale
-    const oal = Math.max(params.overallLength, 1) * scale
-    const fluteLen = Math.min(params.fluteLength, params.overallLength - 0.5) * scale
-    const shankLen = Math.min(params.shankLength, params.overallLength) * scale
-
-    // Align tool along +Z (tip at +Z, shank toward -Z), then rotate for view
-    let z = 0
-
-    // Tip / cutting end
     if (toolType === 'drill') {
-      const drill = params as DrillParams
-      const pointAngle = ((drill.pointAngle || 118) * Math.PI) / 180
-      const half = pointAngle / 2
-      const coneH = Math.max(dia * 0.35, (dia / 2) / Math.tan(half))
-      const tip = new THREE.Mesh(
-        new THREE.ConeGeometry(dia / 2, coneH, 24),
-        matTip,
-      )
-      tip.rotation.x = Math.PI / 2
-      tip.position.z = z + coneH / 2
-      group.add(tip)
-      z += coneH
+      buildDrillMesh(group, normalizeDrill(params), PREVIEW_SCALE)
+    } else if (toolType === 'endmill') {
+      buildEndmillMesh(group, params as EndmillParams, PREVIEW_SCALE)
     } else {
-      const em = params as EndmillParams
-      if (em.cornerRadius > 0) {
-        const r = Math.min(em.cornerRadius, params.diameter / 2) * scale
-        const torus = new THREE.Mesh(
-          new THREE.TorusGeometry(dia / 2 - r, r, 12, 32, Math.PI),
-          matCutting,
-        )
-        torus.rotation.y = Math.PI / 2
-        torus.position.z = z + r * 0.15
-        // simpler: rounded end disc
-        const end = new THREE.Mesh(
-          new THREE.CylinderGeometry(dia / 2, dia / 2, r * 1.2, 32),
-          matCutting,
-        )
-        end.rotation.x = Math.PI / 2
-        end.position.z = z + r * 0.6
-        group.add(end)
-        z += r * 1.2
-      } else {
-        const end = new THREE.Mesh(
-          new THREE.CylinderGeometry(dia / 2, dia / 2, 0.15 * scale * 10, 32),
-          matCutting,
-        )
-        end.rotation.x = Math.PI / 2
-        end.position.z = z + 0.08
-        group.add(end)
-        z += 0.15
-      }
+      const neverType: never = toolType
+      void neverType
     }
 
-    // Fluted section — cylinder with helical groove approximations (thin cylinders offset)
-    const fluteBody = new THREE.Mesh(
-      new THREE.CylinderGeometry(dia / 2, dia / 2, Math.max(fluteLen, 0.5), 48),
-      matCutting,
-    )
-    fluteBody.rotation.x = Math.PI / 2
-    fluteBody.position.z = z + fluteLen / 2
-    group.add(fluteBody)
+    // Three-quarter side view: length across the frame, point toward the left, flutes rolled toward the camera.
+    const aim = new THREE.Vector3(1, 0.12, -0.08).normalize()
+    const align = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), aim)
+    const roll = new THREE.Quaternion().setFromAxisAngle(aim, 1.1)
+    group.quaternion.copy(roll.multiply(align))
+    group.updateMatrixWorld(true)
+    const rawBox = new THREE.Box3().setFromObject(group)
+    group.position.sub(rawBox.getCenter(new THREE.Vector3()))
+    group.updateMatrixWorld(true)
 
-    const fluteCount = Math.max(2, Math.min(8, params.fluteCount | 0))
-    for (let i = 0; i < fluteCount; i++) {
-      const angle = (i / fluteCount) * Math.PI * 2
-      const groove = new THREE.Mesh(
-        new THREE.CylinderGeometry(dia * 0.12, dia * 0.12, Math.max(fluteLen * 0.95, 0.4), 8),
-        matFlute,
-      )
-      groove.rotation.x = Math.PI / 2
-      const helix = toolType === 'endmill' ? ((params as EndmillParams).helixAngle || 30) : 30
-      const twist = (helix / 45) * 0.35
-      groove.position.set(
-        Math.cos(angle) * dia * 0.38,
-        Math.sin(angle) * dia * 0.38,
-        z + fluteLen / 2,
-      )
-      groove.rotation.z = angle + twist
-      group.add(groove)
-    }
-    z += fluteLen
-
-    // Optional neck (endmill)
-    if (toolType === 'endmill') {
-      const em = params as EndmillParams
-      if (em.neckDiameter != null && em.neckLength != null && em.neckLength > 0) {
-        const nd = Math.max(em.neckDiameter, 0.3) * scale
-        const nl = em.neckLength * scale
-        const neck = new THREE.Mesh(
-          new THREE.CylinderGeometry(nd / 2, nd / 2, nl, 24),
-          matShank,
-        )
-        neck.rotation.x = Math.PI / 2
-        neck.position.z = z + nl / 2
-        group.add(neck)
-        z += nl
-      }
-    }
-
-    // Shank
-    const remaining = Math.max(oal * 0.15, shankLen * 0.5, oal - z)
-    const shankH = Math.max(remaining, shankLen * 0.6)
-    const shank = new THREE.Mesh(
-      new THREE.CylinderGeometry(shankDia / 2, shankDia / 2, shankH, 32),
-      matShank,
-    )
-    shank.rotation.x = Math.PI / 2
-    shank.position.z = z + shankH / 2
-    group.add(shank)
-
-    // Center group
     const box = new THREE.Box3().setFromObject(group)
-    const center = box.getCenter(new THREE.Vector3())
-    group.position.sub(center)
+    const size = box.getSize(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z, 0.01)
+    const tipWorld = new THREE.Vector3(0, 0, 0).applyMatrix4(group.matrixWorld)
+    const look = new THREE.Vector3(0, 0, 0).lerp(tipWorld, toolType === 'endmill' ? 0.08 : 0.28)
+    const vFov = (camera.fov * Math.PI) / 180
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect)
+    const dist =
+      Math.max(size.x / 2 / Math.tan(hFov / 2), size.y / 2 / Math.tan(vFov / 2), size.z / 2 / Math.tan(hFov / 2)) * 1.55
+    camera.position.set(dist * 0.04, dist * 0.1, dist)
+    camera.lookAt(look)
+    camera.near = Math.max(dist / 140, 0.01)
+    camera.far = dist * 24
+    camera.updateProjectionMatrix()
 
-    // Orient tip up-ish for nicer view
-    group.rotation.x = -Math.PI / 2.4
-    group.rotation.z = Math.PI / 8
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.target.copy(look)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.08
+    controls.enablePan = false
+    controls.zoomToCursor = true
+    controls.minDistance = dist * 0.08
+    controls.maxDistance = dist * 3
+    controls.update()
 
-    const size = box.getSize(new THREE.Vector3()).length()
-    camera.position.set(size * 0.55, size * 0.35, size * 0.7)
-    camera.lookAt(0, 0, 0)
-
-    // Grid helper (subtle)
-    const grid = new THREE.GridHelper(size * 1.5, 10, 0x1e2a32, 0x162028)
-    grid.position.y = -size * 0.35
+    const grid = new THREE.GridHelper(maxDim * 1.35, 12, 0x1a262e, 0x121a20)
+    grid.position.y = box.min.y - maxDim * 0.028
     scene.add(grid)
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(maxDim * 0.62, 72),
+      new THREE.MeshPhysicalMaterial({ color: 0x10161b, metalness: 0.45, roughness: 0.62 }),
+    )
+    ground.rotation.x = -Math.PI / 2
+    ground.position.y = box.min.y - maxDim * 0.027
+    scene.add(ground)
 
-    let frame = 0
     let raf = 0
     const animate = () => {
       raf = requestAnimationFrame(animate)
-      group.rotation.y += 0.008
+      controls.update()
       renderer.render(scene, camera)
-      frame++
     }
     animate()
 
     const onResize = () => {
-      if (!mount) return
-      const nw = mount.clientWidth
-      const nh = mount.clientHeight
-      camera.aspect = nw / nh
+      const nextW = mount.clientWidth
+      const nextH = mount.clientHeight
+      camera.aspect = nextW / Math.max(nextH, 1)
       camera.updateProjectionMatrix()
-      renderer.setSize(nw, nh)
+      renderer.setSize(nextW, nextH)
     }
-    const ro = new ResizeObserver(onResize)
-    ro.observe(mount)
+    const observer = new ResizeObserver(onResize)
+    observer.observe(mount)
+    applyPreviewHighlight(group, highlightRef.current)
 
     return () => {
       cancelAnimationFrame(raf)
-      ro.disconnect()
+      observer.disconnect()
+      controls.dispose()
+      envTex.dispose()
+      pmrem.dispose()
       renderer.dispose()
-      matShank.dispose()
-      matCutting.dispose()
-      matFlute.dispose()
-      matTip.dispose()
+      groupRef.current = null
+      const seen = new Set<THREE.Material>()
       scene.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry.dispose()
+        if (!(obj instanceof THREE.Mesh)) return
+        obj.geometry.dispose()
+        const materials = [obj.userData.baseMaterial, obj.userData.highlightMaterial, obj.material, ground.material]
+        for (const material of materials) {
+          if (material instanceof THREE.Material && !seen.has(material)) {
+            seen.add(material)
+            material.dispose()
+          }
         }
       })
-      if (mount.contains(renderer.domElement)) {
-        mount.removeChild(renderer.domElement)
-      }
-      void frame
+      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement)
     }
   }, [toolType, params])
+
+  useEffect(() => {
+    highlightRef.current = highlight
+    if (groupRef.current) applyPreviewHighlight(groupRef.current, highlight)
+  }, [highlight])
+
+  const title = toolType === 'drill' ? `${drillCaption(normalizeDrill(params))} · drag to rotate` : 'Live 3D preview · drag to rotate'
+  const badge = highlight
+    ? `Highlighting the ${previewPartLabel(highlight)}`
+    : 'Drag to rotate · approximate geometry'
 
   return (
     <div className="preview-panel">
       <div className="preview-header">
-        <span className="preview-title">Live 3D preview</span>
-        <span className="preview-badge">Simplified geometry — not grind sim</span>
+        <span className="preview-title">{title}</span>
+        <span className="preview-badge">{badge}</span>
       </div>
       <div ref={mountRef} className="preview-canvas" />
     </div>

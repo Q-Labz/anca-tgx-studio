@@ -1,4 +1,5 @@
-import type { DrillParams, EndmillParams, JobTraveler, SavedDesign, ToolType } from './types'
+import { normalizeDrill } from './drillTypes'
+import type { DrillParams, EndmillParams, JobTraveler, SavedDesign } from './types'
 
 const DISCLAIMER =
   'For ToolRoom / TGX setup — not a TOM file. Human/machine-friendly parameters only; not proprietary ANCA binary.'
@@ -36,7 +37,10 @@ export function exportDesignJson(design: SavedDesign) {
 }
 
 export function exportDesignCsv(design: SavedDesign) {
-  const rows = flattenParams(design.toolType, design.params as EndmillParams & DrillParams)
+  const rows =
+    design.toolType === 'drill'
+      ? flattenDrill(design.params as DrillParams)
+      : flattenEndmill(design.params as EndmillParams)
   const header = ['key', 'value']
   const lines = [
     '# ' + DISCLAIMER,
@@ -47,34 +51,75 @@ export function exportDesignCsv(design: SavedDesign) {
   downloadBlob(`${sanitize(name)}.csv`, lines.join('\n'), 'text/csv')
 }
 
-function flattenParams(
-  type: ToolType,
-  p: EndmillParams & Partial<DrillParams>,
-): [string, string | number][] {
-  const base: [string, string | number][] = [
-    ['toolType', type],
+function flattenEndmill(p: EndmillParams): [string, string | number][] {
+  return [
+    ['toolType', 'endmill'],
     ['name', p.name],
     ['diameter_mm', p.diameter],
     ['fluteCount', p.fluteCount],
+    ['helixAngle_deg', p.helixAngle],
     ['overallLength_mm', p.overallLength],
     ['fluteLength_mm', p.fluteLength],
     ['shankDiameter_mm', p.shankDiameter],
     ['shankLength_mm', p.shankLength],
     ['coating', p.coating],
     ['material', p.material],
+    ['cornerRadius_mm', p.cornerRadius],
+    ['neckDiameter_mm', p.neckDiameter ?? ''],
+    ['neckLength_mm', p.neckLength ?? ''],
   ]
-  if (type === 'endmill') {
-    base.splice(4, 0, ['helixAngle_deg', p.helixAngle])
-    base.push(
-      ['cornerRadius_mm', p.cornerRadius],
-      ['neckDiameter_mm', p.neckDiameter ?? ''],
-      ['neckLength_mm', p.neckLength ?? ''],
-    )
-  } else {
-    base.splice(4, 0, ['pointAngle_deg', p.pointAngle ?? ''])
-    base.push(['webThinningNote', p.webThinningNote ?? ''])
+}
+
+function flattenDrill(raw: DrillParams): [string, string | number][] {
+  const p = normalizeDrill(raw)
+  const rows: [string, string | number][] = [
+    ['toolType', 'drill'],
+    ['drillType', p.drillType],
+    ['name', p.name],
+    ['diameter_mm', p.diameter],
+    ['pointAngle_deg', p.pointAngle],
+    ['fluteCount', p.fluteCount],
+    ['helixAngle_deg', p.helixAngle],
+    ['overallLength_mm', p.overallLength],
+    ['fluteLength_mm', p.fluteLength],
+    ['shankDiameter_mm', p.shankDiameter],
+    ['shankLength_mm', p.shankLength],
+    ['webThickness_mm', p.webThickness],
+    ['webThinning', p.webThinning],
+    ['webThinningNote', p.webThinningNote],
+    ['marginWidth_mm', p.marginWidth],
+    ['bodyClearance_mm', p.bodyClearance],
+    ['lipReliefAngle_deg', p.lipReliefAngle],
+    ['backTaper_mm_per_100mm', p.backTaper],
+    ['coolantHoles', p.coolantHoles],
+    ['coolantHoleDiameter_mm', p.coolantHoleDiameter],
+    ['coating', p.coating],
+    ['material', p.material],
+  ]
+  if (p.drillType === 'step') {
+    p.steps.forEach((step, index) => {
+      rows.push(
+        [`step${index + 1}_diameter_mm`, step.diameter],
+        [`step${index + 1}_length_mm`, step.length],
+      )
+    })
   }
-  return base
+  if (p.drillType === 'subland') {
+    rows.push(['sublandDiameter_mm', p.sublandDiameter], ['sublandLength_mm', p.sublandLength])
+  }
+  if (p.drillType === 'center') {
+    rows.push(
+      ['centerSize', p.centerSize],
+      ['pilotLength_mm', p.pilotLength],
+      ['countersinkAngle_deg', p.countersinkAngle],
+      ['countersinkDiameter_mm', p.countersinkDiameter],
+    )
+  }
+  if (p.drillType === 'countersink') {
+    rows.push(['chamferAngle_deg', p.chamferAngle], ['chamferDiameter_mm', p.chamferDiameter])
+  }
+  if (p.drillType === 'gun') rows.push(['gunFluteStyle', p.gunFluteStyle])
+  return rows
 }
 
 export function exportTravelerJson(traveler: JobTraveler) {

@@ -5,6 +5,7 @@ import type {
   SavedDesign,
   ToolType,
 } from '../lib/types'
+import { getDrillType, normalizeDrill } from '../lib/drillTypes'
 import { listDesigns } from '../lib/storage'
 import {
   HANDOFF_DISCLAIMER,
@@ -79,7 +80,11 @@ export function ToolRoomHandoff({ draft, onLoadDesign }: Props) {
           <div className="handoff-source">
             <div>
               <strong>{(params as { name: string }).name || 'Untitled'}</strong>
-              <span className="tag">{draft.toolType}</span>
+              <span className="tag">
+              {draft.toolType === 'drill'
+                ? getDrillType(normalizeDrill(draft.drill).drillType).shortLabel
+                : draft.toolType}
+            </span>
             </div>
             <div className="muted tiny">
               {draft.designId ? `Saved id: ${draft.designId}` : 'Unsaved draft (current form)'}
@@ -173,7 +178,10 @@ export function ToolRoomHandoff({ draft, onLoadDesign }: Props) {
         <div className="panel handoff-map-panel">
           <div className="panel-head">
             <h2>
-              Field map · {draft.toolType === 'endmill' ? 'Solid endmill' : 'Drill'}
+              Field map ·{' '}
+              {draft.toolType === 'endmill'
+                ? 'Solid endmill'
+                : getDrillType(normalizeDrill(draft.drill).drillType).label}
             </h2>
             <span className="muted tiny">Studio → typical ToolRoom iGrind labels</span>
           </div>

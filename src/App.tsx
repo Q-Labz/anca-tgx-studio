@@ -8,7 +8,8 @@ import type {
   SavedDesign,
   ToolType,
 } from './lib/types'
-import { DEFAULT_DRILL, DEFAULT_ENDMILL } from './lib/types'
+import { createDrill, normalizeDrill } from './lib/drillTypes'
+import { DEFAULT_ENDMILL } from './lib/types'
 
 type Tab = 'designer' | 'traveler' | 'handoff'
 
@@ -19,7 +20,7 @@ export default function App() {
   // Shared draft so Designer and ToolRoom Handoff stay in sync
   const [toolType, setToolType] = useState<ToolType>('endmill')
   const [endmill, setEndmill] = useState<EndmillParams>({ ...DEFAULT_ENDMILL })
-  const [drill, setDrill] = useState<DrillParams>({ ...DEFAULT_DRILL })
+  const [drill, setDrill] = useState<DrillParams>(() => createDrill('jobber'))
   const [designId, setDesignId] = useState<string | null>(null)
 
   const onCreateTraveler = useCallback((design: SavedDesign) => {
@@ -33,7 +34,7 @@ export default function App() {
     setToolType(d.toolType)
     setDesignId(d.id)
     if (d.toolType === 'endmill') setEndmill(d.params as EndmillParams)
-    else setDrill(d.params as DrillParams)
+    else setDrill(normalizeDrill(d.params))
   }, [])
 
   return (

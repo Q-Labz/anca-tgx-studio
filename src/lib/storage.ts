@@ -1,4 +1,5 @@
-import type { JobTraveler, SavedDesign } from './types'
+import { normalizeDrill } from './drillTypes'
+import type { DrillParams, JobTraveler, SavedDesign } from './types'
 
 const DESIGNS_KEY = 'anca-tgx-studio:designs'
 const TRAVELERS_KEY = 'anca-tgx-studio:travelers'
@@ -18,10 +19,15 @@ function write<T>(key: string, value: T[]): void {
   localStorage.setItem(key, JSON.stringify(value))
 }
 
+function hydrateDesign(design: SavedDesign): SavedDesign {
+  if (design.toolType !== 'drill') return design
+  return { ...design, params: normalizeDrill(design.params as Partial<DrillParams>) }
+}
+
 export function listDesigns(): SavedDesign[] {
-  return read<SavedDesign>(DESIGNS_KEY).sort(
-    (a, b) => b.updatedAt.localeCompare(a.updatedAt),
-  )
+  return read<SavedDesign>(DESIGNS_KEY)
+    .map(hydrateDesign)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 
 export function saveDesign(design: SavedDesign): void {
