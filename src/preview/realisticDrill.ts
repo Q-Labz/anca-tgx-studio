@@ -206,7 +206,7 @@ function sampleCutting(plan: DrillMeshPlan, span: MeshSpan, z: number, theta: nu
   r = Math.min(outer, Math.max(r, Math.min(plan.chisel * 0.65, outer)))
   if (plan.coreHole != null && span.kind === 'point') r = Math.max(r, plan.coreHole * 0.98)
   const land = r > outer * 0.96
-  const shade = land ? 1 : mix(0.84, 0.96, r / Math.max(outer, 1e-4))
+  const shade = land ? 1 : mix(0.68, 0.93, r / Math.max(outer, 1e-4))
   const twist = (z / Math.max(plan.fluteEnd, 1e-4)) * plan.helixTwist
   return { r, shade, zShift: 0, twist }
 }

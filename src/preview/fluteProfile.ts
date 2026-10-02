@@ -247,8 +247,8 @@ function gulletRadius(
   wide: boolean,
 ): number {
   const body = Math.max(web, outer - clearance)
-  const lip = wide ? 0.045 : 0.06
-  const bowlEnd = wide ? 0.56 : 0.4
+  const lip = wide ? 0.04 : 0.05
+  const bowlEnd = wide ? 0.64 : 0.5
   if (u < lip) {
     return mix(outer, body, smoothstep(u / Math.max(lip, 1e-4)))
   }

@@ -97,9 +97,11 @@ export function ToolPreview({ toolType, params, highlight = null }: Props) {
       void neverType
     }
 
-    // Three-quarter side view of the whole tool. Orbit and zoom stay with the user.
-    group.rotation.x = -Math.PI / 2.18
-    group.rotation.z = Math.PI / 6
+    // Three-quarter side view: length across the frame, point toward the left, flutes rolled toward the camera.
+    const aim = new THREE.Vector3(1, 0.12, -0.08).normalize()
+    const align = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), aim)
+    const roll = new THREE.Quaternion().setFromAxisAngle(aim, 1.1)
+    group.quaternion.copy(roll.multiply(align))
     group.updateMatrixWorld(true)
     const rawBox = new THREE.Box3().setFromObject(group)
     group.position.sub(rawBox.getCenter(new THREE.Vector3()))
@@ -109,10 +111,12 @@ export function ToolPreview({ toolType, params, highlight = null }: Props) {
     const size = box.getSize(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.y, size.z, 0.01)
     const tipWorld = new THREE.Vector3(0, 0, 0).applyMatrix4(group.matrixWorld)
-    const look = new THREE.Vector3(0, 0, 0).lerp(tipWorld, toolType === 'endmill' ? 0.16 : 0.14)
-    const fov = (camera.fov * Math.PI) / 180
-    const dist = (maxDim / 2 / Math.tan(fov / 2)) * 1.52
-    camera.position.set(dist * 0.62, dist * 0.46, dist * 0.7)
+    const look = new THREE.Vector3(0, 0, 0).lerp(tipWorld, toolType === 'endmill' ? 0.08 : 0.28)
+    const vFov = (camera.fov * Math.PI) / 180
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect)
+    const dist =
+      Math.max(size.x / 2 / Math.tan(hFov / 2), size.y / 2 / Math.tan(vFov / 2), size.z / 2 / Math.tan(hFov / 2)) * 1.55
+    camera.position.set(dist * 0.04, dist * 0.1, dist)
     camera.lookAt(look)
     camera.near = Math.max(dist / 140, 0.01)
     camera.far = dist * 24
@@ -123,7 +127,8 @@ export function ToolPreview({ toolType, params, highlight = null }: Props) {
     controls.enableDamping = true
     controls.dampingFactor = 0.08
     controls.enablePan = false
-    controls.minDistance = dist * 0.2
+    controls.zoomToCursor = true
+    controls.minDistance = dist * 0.08
     controls.maxDistance = dist * 3
     controls.update()
 
